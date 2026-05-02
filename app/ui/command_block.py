@@ -111,7 +111,26 @@ class CommandBlock(QWidget):
         self._block = block
         self._expanded = True
         self._output_widget: QPlainTextEdit | None = None
+        self._card: QFrame | None = None
         self._build_ui()
+
+    @property
+    def searchable_text(self) -> str:
+        output = self._block.stdout or self._block.stderr
+        return f"{self._block.command.text} {output}".lower()
+
+    def set_search_highlight(self, active: bool) -> None:
+        if self._card is None:
+            return
+        if active:
+            self._card.setStyleSheet(
+                "QFrame { background-color: #1e2a3a; border-radius: 8px;"
+                " border: 1px solid #89b4fa; }"
+            )
+        else:
+            self._card.setStyleSheet(
+                "QFrame { background-color: #161926; border-radius: 8px; border: none; }"
+            )
 
     def _build_ui(self):
         row = QHBoxLayout(self)
@@ -135,6 +154,7 @@ class CommandBlock(QWidget):
 
     def _build_card(self) -> QFrame:
         card = QFrame()
+        self._card = card  # keep reference for search highlighting
         card.setFrameShape(QFrame.NoFrame)
         card.setStyleSheet(
             "QFrame { background-color: #161926; border-radius: 8px; border: none; }"
