@@ -67,6 +67,13 @@ class MainWindow(QMainWindow):
         self._scroll.setWidget(self._blocks_container)
         right_layout.addWidget(self._scroll)
 
+        # rangeChanged fires after Qt finishes recalculating content size,
+        # which is after all nested layouts are resolved — the only reliable
+        # point to read the real maximum and scroll to it.
+        self._scroll.verticalScrollBar().rangeChanged.connect(
+            lambda _min, maximum: self._scroll.verticalScrollBar().setValue(maximum)
+        )
+
         # Bottom divider
         b_sep = QFrame()
         b_sep.setFrameShape(QFrame.HLine)
@@ -87,9 +94,13 @@ class MainWindow(QMainWindow):
             self._blocks_layout.count() - 1,
             widget,
         )
-        self._scroll.verticalScrollBar().setValue(
-            self._scroll.verticalScrollBar().maximum()
-        )
+
+    def clear_blocks(self) -> None:
+        """Remove all command blocks, keeping only the trailing stretch item."""
+        while self._blocks_layout.count() > 1:
+            item = self._blocks_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
     def _remove_block(self, block_widget: QWidget) -> None:
         self._blocks_layout.removeWidget(block_widget)
