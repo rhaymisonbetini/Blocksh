@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QFrame,
 )
-from PySide6.QtCore import Signal, QTimer
+from PySide6.QtCore import Signal
 from .command_block import CommandBlock
 from .input_bar import InputBar
 from .sidebar import Sidebar
@@ -67,6 +67,13 @@ class MainWindow(QMainWindow):
         self._scroll.setWidget(self._blocks_container)
         right_layout.addWidget(self._scroll)
 
+        # rangeChanged fires after Qt finishes recalculating content size,
+        # which is after all nested layouts are resolved — the only reliable
+        # point to read the real maximum and scroll to it.
+        self._scroll.verticalScrollBar().rangeChanged.connect(
+            lambda _min, maximum: self._scroll.verticalScrollBar().setValue(maximum)
+        )
+
         # Bottom divider
         b_sep = QFrame()
         b_sep.setFrameShape(QFrame.HLine)
@@ -86,14 +93,6 @@ class MainWindow(QMainWindow):
         self._blocks_layout.insertWidget(
             self._blocks_layout.count() - 1,
             widget,
-        )
-        # Defer scroll to the next event loop tick so the layout finishes
-        # recalculating sizes before we read verticalScrollBar().maximum()
-        QTimer.singleShot(0, self._scroll_to_bottom)
-
-    def _scroll_to_bottom(self) -> None:
-        self._scroll.verticalScrollBar().setValue(
-            self._scroll.verticalScrollBar().maximum()
         )
 
     def _remove_block(self, block_widget: QWidget) -> None:
