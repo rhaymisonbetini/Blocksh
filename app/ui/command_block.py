@@ -1,12 +1,25 @@
+import os
+import re
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QLabel, QPlainTextEdit, QPushButton,
     QApplication, QMenu,
 )
-from PySide6.QtGui import QFont
+from PySide6.QtGui import (
+    QFont, QFontMetrics,
+    QSyntaxHighlighter, QTextCharFormat, QColor,
+)
 from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
+
+# ── Colour palette for output highlighting ────────────────────────────────────
+_C_DIR      = "#89b4fa"   # blue  — directories
+_C_SYMLINK  = "#94e2d5"   # cyan  — symlinks
+_C_EXEC     = "#a6e3a1"   # green — executables
+_C_TOTAL    = "#45475a"   # grey  — "total N" header line
+_C_ERROR    = "#f38ba8"   # red   — stderr output
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _display_cwd(cwd: str) -> str:
@@ -18,6 +31,76 @@ def _display_cwd(cwd: str) -> str:
     if cwd.startswith(home + "/"):
         return "~" + cwd[len(home):]
     return cwd
+
+
+def _is_ls_long(cmd: str) -> bool:
+    """True when the command is any ls variant with the -l flag."""
+    return bool(re.search(r"\bls\b[^|;]*-[a-zA-Z]*l", cmd))
+
+
+def _is_ls(cmd: str) -> bool:
+    """True for any ls invocation."""
+    c = cmd.strip()
+    return c == "ls" or c.startswith("ls ") or c.startswith("ls\t")
+
+
+class _OutputHighlighter(QSyntaxHighlighter):
+    """
+    Syntax highlighter for command output.
+
+    Strategies:
+      • ls -l / ls -la  → permission string first char (d/l/-) decides colour
+      • ls (plain)      → os.path.isdir/islink against block.cwd for each entry
+      • stderr output   → entire block coloured as error
+    """
+
+    def __init__(self, document, command: str, cwd: str, is_stderr: bool):
+        super().__init__(document)
+        self._cwd        = cwd
+        self._is_stderr  = is_stderr
+        self._ls_long    = _is_ls_long(command)
+        self._ls_plain   = (not self._ls_long) and _is_ls(command)
+
+    def highlightBlock(self, text: str) -> None:
+        if self._is_stderr:
+            self._fmt(text, _C_ERROR)
+            return
+
+        if self._ls_long:
+            self._highlight_long(text)
+        elif self._ls_plain:
+            self._highlight_plain(text)
+
+    def _highlight_long(self, text: str) -> None:
+        """Colour based on the permission-string first character."""
+        if text.startswith("total "):
+            self._fmt(text, _C_TOTAL)
+        elif text.startswith("d"):
+            self._fmt(text, _C_DIR, bold=True)
+        elif text.startswith("l"):
+            self._fmt(text, _C_SYMLINK)
+        elif text.startswith("-") and len(text) > 3 and "x" in text[:10]:
+            self._fmt(text, _C_EXEC)
+
+    def _highlight_plain(self, text: str) -> None:
+        """Check each entry against the filesystem using block.cwd."""
+        entry = text.strip()
+        if not entry or not self._cwd:
+            return
+        full = os.path.join(self._cwd, entry)
+        if os.path.islink(full):
+            self._fmt(text, _C_SYMLINK)
+        elif os.path.isdir(full):
+            self._fmt(text, _C_DIR, bold=True)
+        elif os.access(full, os.X_OK) and os.path.isfile(full):
+            self._fmt(text, _C_EXEC)
+
+    def _fmt(self, text: str, color: str, bold: bool = False) -> None:
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        if bold:
+            fmt.setFontWeight(QFont.Bold)
+        self.setFormat(0, len(text), fmt)
 
 
 class CommandBlock(QWidget):
@@ -36,9 +119,7 @@ class CommandBlock(QWidget):
         row.setSpacing(12)
 
         row.addWidget(self._build_status_circle(), alignment=Qt.AlignTop | Qt.AlignHCenter)
-
-        card = self._build_card()
-        row.addWidget(card)
+        row.addWidget(self._build_card())
 
     def _build_status_circle(self) -> QPushButton:
         color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
@@ -80,17 +161,14 @@ class CommandBlock(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        # cwd label
         cwd_text = _display_cwd(self._block.cwd)
         if cwd_text:
             cwd_lbl = QLabel(cwd_text)
             cwd_lbl.setStyleSheet(
-                "color: #89b4fa; font-family: Monospace; font-size: 9pt;"
-                " background: transparent;"
+                "color: #89b4fa; font-family: Monospace; font-size: 9pt; background: transparent;"
             )
             layout.addWidget(cwd_lbl)
 
-        # prompt symbol
         prompt = QLabel("$")
         prompt.setStyleSheet(
             "color: #a6e3a1; font-family: Monospace; font-size: 10pt;"
@@ -98,7 +176,6 @@ class CommandBlock(QWidget):
         )
         layout.addWidget(prompt)
 
-        # command text
         cmd_font = QFont("Monospace", 10)
         cmd_font.setBold(True)
         cmd_lbl = QLabel(self._block.command.text)
@@ -108,18 +185,14 @@ class CommandBlock(QWidget):
 
         layout.addStretch()
 
-        # timestamp
-        ts = self._block.command.created_at.strftime("%H:%M:%S")
-        ts_lbl = QLabel(ts)
+        ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
         ts_lbl.setStyleSheet("color: #45475a; font-size: 8pt; background: transparent;")
         layout.addWidget(ts_lbl)
 
-        # three-dot context menu
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(22, 22)
         menu_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #45475a; border: none;"
-            " font-size: 13pt; }"
+            "QPushButton { background: transparent; color: #45475a; border: none; font-size: 13pt; }"
             "QPushButton:hover { color: #cdd6f4; }"
         )
         menu_btn.clicked.connect(self._show_menu)
@@ -128,16 +201,35 @@ class CommandBlock(QWidget):
         return header
 
     def _build_output(self, text: str) -> QPlainTextEdit:
+        font = QFont("Monospace", 9)
         out = QPlainTextEdit()
         out.setReadOnly(True)
+        out.setFont(font)
+        out.document().setDocumentMargin(4)
         out.setPlainText(text.rstrip())
-        out.setFont(QFont("Monospace", 9))
         out.setStyleSheet(
             "QPlainTextEdit { background: transparent; border: none;"
             " color: #cdd6f4; selection-background-color: #313244; }"
         )
-        line_count = text.count("\n") + 1
-        out.setFixedHeight(min(300, line_count * 20 + 16))
+        out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Attach highlighter (ls directory/file colouring, stderr error colouring)
+        is_stderr = bool(self._block.stderr) and not self._block.stdout
+        _OutputHighlighter(
+            out.document(),
+            self._block.command.text,
+            self._block.cwd,
+            is_stderr,
+        )
+
+        # Height: fit content exactly, capped at 300px
+        line_h = QFontMetrics(font).lineSpacing()
+        line_count = text.rstrip().count("\n") + 1
+        # document margin (4px * 2) + 4px breathing room
+        content_h = line_count * line_h + 12
+        out.setFixedHeight(min(300, max(line_h + 12, content_h)))
+
         return out
 
     def _build_footer(self) -> QWidget:
@@ -179,7 +271,6 @@ class CommandBlock(QWidget):
             "QMenu::item:selected { background: #2a3f6e; }"
         )
         output = self._block.stdout or self._block.stderr
-
         menu.addAction("Copiar comando",
                        lambda: QApplication.clipboard().setText(self._block.command.text))
         if output.strip():
@@ -187,7 +278,6 @@ class CommandBlock(QWidget):
                            lambda: QApplication.clipboard().setText(output.rstrip()))
         menu.addSeparator()
         menu.addAction("Remover bloco", lambda: self.remove_requested.emit(self))
-
         menu.exec(self.cursor().pos())
 
     @staticmethod
