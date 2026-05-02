@@ -2,10 +2,6 @@ import sys
 from PySide6.QtWidgets import QApplication
 from .ui.main_window import MainWindow
 from .core.command_executor import SubprocessExecutor
-from .core.shell_session import ShellSession
-from .domain.command import Command
-from .domain.block import Block
-from .services.history_service import HistoryService
 from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
 
@@ -45,42 +41,12 @@ def main():
         QMenu::item:selected { background: #2a3f6e; }
     """)
 
-    # Infrastructure
     conn = get_connection()
     initialize_schema(conn)
     repository = HistoryRepository(conn)
-
-    # Core
     executor = SubprocessExecutor()
-    session = ShellSession()
-    history = HistoryService(repository)
 
-    # UI
-    window = MainWindow()
-    window.update_cwd(session.cwd_display())
-
-    def on_command(text: str):
-        # clear is a UI built-in: wipe all blocks and return immediately
-        if text.strip() == "clear":
-            window.clear_blocks()
-            return
-
-        command = Command(text=text)
-
-        if session.try_cd(text):
-            # cd was resolved internally — running it via subprocess would fail
-            # because the cwd is already updated to the target directory.
-            command.status = "done"
-            block = Block(command=command, stdout="", stderr="", exit_code=0, cwd=session.cwd)
-        else:
-            block = executor.execute(command, cwd=session.cwd, env=session.env)
-
-        history.add(block)
-        window.add_block(block)
-        window.update_input_history(history.commands())
-        window.update_cwd(session.cwd_display())
-
-    window.command_submitted.connect(on_command)
+    window = MainWindow(executor, repository)
     window.show()
 
     sys.exit(app.exec())

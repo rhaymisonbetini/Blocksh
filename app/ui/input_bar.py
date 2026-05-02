@@ -106,5 +106,10 @@ class InputBar(QWidget):
     def update_cwd(self, display_path: str) -> None:
         pass  # cwd is displayed in the sidebar on this layout
 
+    def set_text(self, text: str) -> None:
+        """Fill the input field (used by history panel command selection)."""
+        self._input.setText(text)
+        self._input.setFocus()
+
     def focus(self):
         self._input.setFocus()
