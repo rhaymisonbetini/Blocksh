@@ -5,9 +5,9 @@ from PySide6.QtCore import Signal, Qt
 class CompletionPopup(QFrame):
     item_activated = Signal(str)
 
-    def __init__(self):
-        # Tool + no focus steal: stays visible while user types in the input
-        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.hide()
         self.setStyleSheet(
             "QFrame { background: #1e2235; border: 1px solid #313244; border-radius: 6px; }"
         )
@@ -47,7 +47,9 @@ class CompletionPopup(QFrame):
 
         for text, is_dir in items:
             self._items.append(text)
-            btn = self._make_button(text, is_dir, active=False)
+            btn = QPushButton(text)
+            btn.setFixedHeight(26)
+            btn.setStyleSheet(self._btn_style(is_dir, active=False))
             btn.clicked.connect(lambda checked, t=text: self.item_activated.emit(t))
             self._list_layout.addWidget(btn)
             self._buttons.append(btn)
@@ -73,25 +75,16 @@ class CompletionPopup(QFrame):
 
     def _set_selected(self, index: int) -> None:
         if 0 <= self._selected < len(self._buttons):
-            old_text = self._items[self._selected]
-            is_dir = old_text.endswith("/")
-            self._buttons[self._selected].setStyleSheet(
-                self._button_style(is_dir, active=False)
-            )
+            is_dir = self._items[self._selected].endswith("/")
+            self._buttons[self._selected].setStyleSheet(self._btn_style(is_dir, active=False))
         self._selected = index
         if 0 <= index < len(self._buttons):
             btn = self._buttons[index]
-            btn.setStyleSheet(self._button_style(self._items[index].endswith("/"), active=True))
+            btn.setStyleSheet(self._btn_style(self._items[index].endswith("/"), active=True))
             self._scroll.ensureWidgetVisible(btn)
 
-    def _make_button(self, text: str, is_dir: bool, active: bool) -> QPushButton:
-        btn = QPushButton(text)
-        btn.setFixedHeight(26)
-        btn.setStyleSheet(self._button_style(is_dir, active))
-        return btn
-
     @staticmethod
-    def _button_style(is_dir: bool, active: bool) -> str:
+    def _btn_style(is_dir: bool, active: bool) -> str:
         color = "#89b4fa" if is_dir else "#cdd6f4"
         bg = "#2a3f6e" if active else "transparent"
         return (

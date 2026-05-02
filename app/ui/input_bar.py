@@ -1,20 +1,15 @@
-import os
-from pathlib import Path
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton
-from PySide6.QtCore import Signal, Qt, QPoint
-
-from .completion_popup import CompletionPopup
+from PySide6.QtCore import Signal, Qt, QRect
 
 
 class _HistoryInput(QLineEdit):
-    go_previous  = Signal()
-    go_next      = Signal()
-    tab_pressed  = Signal()
-    esc_pressed  = Signal()
-    popup_up     = Signal()
-    popup_down   = Signal()
-    popup_enter  = Signal()
-    focus_lost   = Signal()
+    go_previous         = Signal()
+    go_next             = Signal()
+    tab_pressed         = Signal()
+    esc_pressed         = Signal()
+    completion_up       = Signal()
+    completion_down     = Signal()
+    completion_accepted = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -25,7 +20,7 @@ class _HistoryInput(QLineEdit):
 
         if key == Qt.Key_Tab:
             self.tab_pressed.emit()
-            return                          # never shift focus on Tab
+            return                      # never shift focus via Tab
 
         if key == Qt.Key_Escape:
             self.esc_pressed.emit()
@@ -33,13 +28,13 @@ class _HistoryInput(QLineEdit):
 
         if self.popup_open:
             if key == Qt.Key_Up:
-                self.popup_up.emit()
+                self.completion_up.emit()
                 return
             if key == Qt.Key_Down:
-                self.popup_down.emit()
+                self.completion_down.emit()
                 return
             if key in (Qt.Key_Return, Qt.Key_Enter):
-                self.popup_enter.emit()
+                self.completion_accepted.emit()
                 return
 
         if key == Qt.Key_Up:
@@ -48,10 +43,6 @@ class _HistoryInput(QLineEdit):
             self.go_next.emit()
         else:
             super().keyPressEvent(event)
-
-    def focusOutEvent(self, event):
-        super().focusOutEvent(event)
-        self.focus_lost.emit()
 
 
 class InputBar(QWidget):
@@ -62,11 +53,8 @@ class InputBar(QWidget):
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
-        self._cwd: str = str(Path.home())
         self.setFixedHeight(60)
         self._build_ui()
-        self._popup = CompletionPopup()
-        self._popup.item_activated.connect(self._on_completion_activated)
 
     def _build_ui(self):
         self.setStyleSheet("QWidget { background-color: #0d0f1a; }")
@@ -93,13 +81,6 @@ class InputBar(QWidget):
         self._input.returnPressed.connect(self._submit)
         self._input.go_previous.connect(self._navigate_previous)
         self._input.go_next.connect(self._navigate_next)
-        self._input.tab_pressed.connect(self._on_tab_pressed)
-        self._input.esc_pressed.connect(self._close_popup)
-        self._input.popup_up.connect(lambda: self._popup.select_prev())
-        self._input.popup_down.connect(lambda: self._popup.select_next())
-        self._input.popup_enter.connect(self._on_popup_enter)
-        self._input.focus_lost.connect(self._close_popup)
-        self._input.textChanged.connect(self._on_text_changed)
 
         run_btn = QPushButton("▶  Run")
         run_btn.setFixedHeight(36)
@@ -120,7 +101,6 @@ class InputBar(QWidget):
     # ── submission ────────────────────────────────────────────────────────────
 
     def _submit(self):
-        self._close_popup()
         text = self._input.text().strip()
         if text:
             self._history_index = -1
@@ -149,116 +129,55 @@ class InputBar(QWidget):
             self._history_index = -1
             self._input.setText(self._draft)
 
-    # ── tab completion ────────────────────────────────────────────────────────
+    # ── completion API (called / connected by TerminalPanel) ──────────────────
 
-    def _on_tab_pressed(self):
-        if self._popup.isVisible():
-            self._popup.select_next()
-        else:
-            self._trigger_completion()
+    @property
+    def tab_pressed(self):
+        return self._input.tab_pressed
 
-    def _trigger_completion(self):
-        base, path_prefix, name_prefix = self._extract_prefix()
-        if not name_prefix and not path_prefix:
-            return
+    @property
+    def esc_pressed(self):
+        return self._input.esc_pressed
 
-        matches = self._get_completions(path_prefix, name_prefix)
-        if not matches:
-            return
+    @property
+    def completion_up(self):
+        return self._input.completion_up
 
-        if len(matches) == 1:
-            self._apply_completion(base, matches[0][0])
-            return
+    @property
+    def completion_down(self):
+        return self._input.completion_down
 
-        self._popup.update_items(matches)
-        self._position_popup()
-        self._popup.show()
-        self._input.popup_open = True
+    @property
+    def completion_accepted(self):
+        return self._input.completion_accepted
 
-    def _on_text_changed(self, _text: str):
-        if not self._popup.isVisible():
-            return
-        base, path_prefix, name_prefix = self._extract_prefix()
-        matches = self._get_completions(path_prefix, name_prefix)
-        if matches:
-            self._popup.update_items(matches)
-            self._position_popup()
-        else:
-            self._close_popup()
+    @property
+    def text_changed(self):
+        return self._input.textChanged
 
-    def _on_popup_enter(self):
-        text = self._popup.current_text()
-        if text:
-            base, _, _ = self._extract_prefix()
-            self._apply_completion(base, text)
-        self._close_popup()
-
-    def _on_completion_activated(self, text: str):
-        base, _, _ = self._extract_prefix()
-        self._apply_completion(base, text)
-        self._close_popup()
-        self._input.setFocus()
-
-    def _apply_completion(self, base: str, completion: str) -> None:
-        new_text = base + completion
-        self._input.setText(new_text)
-        self._input.setCursorPosition(len(new_text))
-
-    def _close_popup(self):
-        self._popup.hide()
-        self._input.popup_open = False
-
-    def _position_popup(self):
-        global_pos = self._input.mapToGlobal(QPoint(0, 0))
-        popup_h = self._popup.height()
-        self._popup.move(global_pos.x(), global_pos.y() - popup_h - 4)
-        self._popup.setFixedWidth(max(220, self._input.width()))
-
-    # ── completion helpers ────────────────────────────────────────────────────
-
-    def _extract_prefix(self) -> tuple[str, str, str]:
-        """Returns (text_before_last_word, dir_prefix, name_prefix)."""
+    def get_completion_context(self) -> tuple[str, str, str]:
+        """Return (text_before_last_word, dir_prefix, name_prefix)."""
         text = self._input.text()
         parts = text.rsplit(" ", 1)
         base = (parts[0] + " ") if len(parts) > 1 else ""
         token = parts[1] if len(parts) > 1 else parts[0]
 
         if "/" in token:
-            slash_idx = token.rfind("/")
-            path_prefix = token[:slash_idx + 1]
-            name_prefix = token[slash_idx + 1:]
-        else:
-            path_prefix = ""
-            name_prefix = token
+            idx = token.rfind("/")
+            return base, token[:idx + 1], token[idx + 1:]
+        return base, "", token
 
-        return base, path_prefix, name_prefix
+    def apply_completion(self, base: str, completion: str) -> None:
+        new_text = base + completion
+        self._input.setText(new_text)
+        self._input.setCursorPosition(len(new_text))
 
-    def _get_completions(self, path_prefix: str, name_prefix: str) -> list[tuple[str, bool]]:
-        """Scan filesystem and return (completion_text, is_dir) pairs."""
-        if path_prefix:
-            if path_prefix.startswith("~"):
-                search_dir = str(Path.home()) + path_prefix[1:]
-            elif os.path.isabs(path_prefix):
-                search_dir = path_prefix
-            else:
-                search_dir = os.path.join(self._cwd, path_prefix)
-        else:
-            search_dir = self._cwd
+    def set_popup_open(self, open: bool) -> None:
+        self._input.popup_open = open
 
-        if not search_dir:
-            return []
-
-        try:
-            matches = []
-            with os.scandir(search_dir) as entries:
-                for entry in entries:
-                    if entry.name.startswith(name_prefix):
-                        is_dir = entry.is_dir()
-                        suffix = "/" if is_dir else ""
-                        matches.append((path_prefix + entry.name + suffix, is_dir))
-            return sorted(matches, key=lambda x: (not x[1], x[0].lower()))
-        except (PermissionError, FileNotFoundError, OSError):
-            return []
+    def input_field_rect(self) -> QRect:
+        """Input field geometry in InputBar-local coordinates."""
+        return self._input.geometry()
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -266,11 +185,7 @@ class InputBar(QWidget):
         self._history = commands
 
     def update_cwd(self, display_path: str) -> None:
-        home = str(Path.home())
-        if display_path.startswith("~"):
-            self._cwd = home + display_path[1:]
-        else:
-            self._cwd = display_path or home
+        pass  # cwd is owned by ShellSession; kept for API compatibility
 
     def set_text(self, text: str) -> None:
         self._input.setText(text)
