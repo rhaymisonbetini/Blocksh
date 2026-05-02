@@ -97,6 +97,7 @@ class TerminalPanel(QWidget):
         # Input bar
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
+        self._input_bar.update_cwd(self._session.cwd_display())
         layout.addWidget(self._input_bar)
 
     # ── command handling ──────────────────────────────────────────────────────
@@ -117,6 +118,7 @@ class TerminalPanel(QWidget):
         self._history.add(block)
         self._add_block(block)
         self._input_bar.update_history(self._history.commands())
+        self._input_bar.update_cwd(self._session.cwd_display())
         self.cwd_changed.emit(self._session.cwd_display())
 
     # ── block management ──────────────────────────────────────────────────────
