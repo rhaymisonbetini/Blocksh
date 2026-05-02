@@ -136,7 +136,7 @@ class TerminalPanel(QWidget):
 
     def _on_tab_pressed(self):
         if self._completion_popup.isVisible():
-            self._completion_popup.select_next()
+            self._accept_completion()   # Tab accepts current item
         else:
             self._trigger_completion()
 
@@ -160,13 +160,20 @@ class TerminalPanel(QWidget):
         self._input_bar.set_popup_open(True)
 
     def _on_input_text_changed(self, _text: str):
-        if not self._completion_popup.isVisible():
-            return
         base, path_prefix, name_prefix = self._input_bar.get_completion_context()
+
+        # Need at least 1 char of the filename being typed to show suggestions
+        if not name_prefix and not path_prefix:
+            self._close_completion()
+            return
+
         matches = self._get_completions(path_prefix, name_prefix)
         if matches:
             self._completion_popup.update_items(matches)
             self._position_completion_popup()
+            self._completion_popup.show()
+            self._completion_popup.raise_()
+            self._input_bar.set_popup_open(True)
         else:
             self._close_completion()
 

@@ -15,12 +15,17 @@ class _HistoryInput(QLineEdit):
         super().__init__(parent)
         self.popup_open = False
 
+    def focusNextPrevChild(self, _next: bool) -> bool:
+        # Prevent Qt from consuming Tab for focus chain navigation so that
+        # keyPressEvent receives Key_Tab and we can use it for completion.
+        return False
+
     def keyPressEvent(self, event):
         key = event.key()
 
         if key == Qt.Key_Tab:
             self.tab_pressed.emit()
-            return                      # never shift focus via Tab
+            return
 
         if key == Qt.Key_Escape:
             self.esc_pressed.emit()
