@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton, QLabel
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLineEdit, QPushButton
 from PySide6.QtCore import Signal, Qt
 
 
@@ -25,40 +25,51 @@ class InputBar(QWidget):
         self._history: list[str] = []
         self._history_index: int = -1  # -1 means not navigating (current draft)
         self._draft: str = ""          # preserves typed text while navigating
+        self.setFixedHeight(60)
         self._build_ui()
 
     def _build_ui(self):
+        self.setStyleSheet("QWidget { background-color: #0d0f1a; }")
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(0)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(10)
 
-        self._cwd_label = QLabel("~")
-        self._cwd_label.setStyleSheet(
-            "color: #89b4fa; font-family: Monospace; font-size: 10pt;"
-            " padding-right: 4px;"
-        )
-
-        self._prompt_label = QLabel("$")
-        self._prompt_label.setStyleSheet(
-            "color: #a6e3a1; font-family: Monospace; font-size: 10pt;"
-            " font-weight: bold; padding-left: 4px; padding-right: 8px;"
+        # Placeholder attach button for future use
+        attach_btn = QPushButton("⊕")
+        attach_btn.setFixedSize(36, 36)
+        attach_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #45475a; border: none;"
+            " font-size: 16pt; }"
+            "QPushButton:hover { color: #6c7086; }"
         )
 
         self._input = _HistoryInput()
-        self._input.setPlaceholderText("type a command...")
+        self._input.setPlaceholderText("Digite um comando...")
+        self._input.setStyleSheet(
+            "QLineEdit { background: transparent; border: none; color: #cdd6f4;"
+            " font-family: Monospace; font-size: 10pt; }"
+            "QLineEdit::placeholder { color: #45475a; }"
+        )
         self._input.returnPressed.connect(self._submit)
         self._input.go_previous.connect(self._navigate_previous)
         self._input.go_next.connect(self._navigate_next)
 
-        self._btn = QPushButton("Run")
-        self._btn.setFixedWidth(64)
-        self._btn.clicked.connect(self._submit)
+        run_btn = QPushButton("▶  Run")
+        run_btn.setFixedHeight(36)
+        run_btn.setMinimumWidth(88)
+        run_btn.setStyleSheet(
+            "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
+            " border-radius: 6px; font-weight: bold; font-size: 10pt;"
+            " padding: 0 18px; }"
+            "QPushButton:hover { background: #27ae60; }"
+            "QPushButton:pressed { background: #1e8449; }"
+        )
+        run_btn.clicked.connect(self._submit)
 
-        layout.addWidget(self._cwd_label)
-        layout.addWidget(self._prompt_label)
+        layout.addWidget(attach_btn)
         layout.addWidget(self._input)
-        layout.addSpacing(8)
-        layout.addWidget(self._btn)
+        layout.addWidget(run_btn)
 
     def _submit(self):
         text = self._input.text().strip()
@@ -93,7 +104,7 @@ class InputBar(QWidget):
         self._history = commands
 
     def update_cwd(self, display_path: str) -> None:
-        self._cwd_label.setText(display_path)
+        pass  # cwd is displayed in the sidebar on this layout
 
     def focus(self):
         self._input.setFocus()

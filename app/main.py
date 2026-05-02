@@ -13,45 +13,35 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet("""
-        QMainWindow, QWidget { background-color: #13131f; color: #cdd6f4; }
-        QScrollArea { border: none; }
-        QLineEdit {
-            background-color: #1e1e2e;
-            color: #cdd6f4;
-            border: 1px solid #313244;
-            border-radius: 4px;
-            padding: 6px 10px;
-            font-family: Monospace;
-            font-size: 10pt;
-        }
-        QLineEdit:focus { border-color: #89b4fa; }
-        QPushButton {
-            background-color: #89b4fa;
-            color: #1e1e2e;
-            border: none;
-            border-radius: 4px;
-            padding: 6px 12px;
-            font-weight: bold;
-        }
-        QPushButton:hover { background-color: #b4befe; }
-        QPlainTextEdit {
-            background-color: #181825;
-            color: #cdd6f4;
-            border: none;
+        QMainWindow, QWidget { background-color: #0d0f1a; color: #cdd6f4; }
+        QScrollArea  { border: none; background: transparent; }
+        QScrollBar:vertical {
+            background: #0d0f1a;
+            width: 6px;
             border-radius: 3px;
+        }
+        QScrollBar::handle:vertical {
+            background: #1e2235;
+            border-radius: 3px;
+            min-height: 24px;
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical { height: 0; }
+        QLabel       { color: #cdd6f4; background: transparent; }
+        QPlainTextEdit {
+            background: transparent;
+            color: #cdd6f4;
+            border: none;
             font-family: Monospace;
             font-size: 9pt;
         }
-        QLabel { color: #cdd6f4; }
-        QScrollBar:vertical {
-            background: #1e1e2e;
-            width: 8px;
-            border-radius: 4px;
+        QMenu {
+            background: #1e2235;
+            color: #cdd6f4;
+            border: 1px solid #313244;
+            border-radius: 6px;
         }
-        QScrollBar::handle:vertical {
-            background: #45475a;
-            border-radius: 4px;
-        }
+        QMenu::item:selected { background: #2a3f6e; }
     """)
 
     # Infrastructure

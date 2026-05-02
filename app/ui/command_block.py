@@ -1,15 +1,15 @@
+from pathlib import Path
 from PySide6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout,
+    QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QLabel, QPlainTextEdit, QPushButton,
-    QWidget, QApplication,
+    QApplication, QMenu,
 )
 from PySide6.QtGui import QFont
-from pathlib import Path
+from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
 
 
 def _display_cwd(cwd: str) -> str:
-    """Replaces home directory with ~ for display."""
     if not cwd:
         return ""
     home = str(Path.home())
@@ -20,21 +20,48 @@ def _display_cwd(cwd: str) -> str:
     return cwd
 
 
-class CommandBlock(QFrame):
+class CommandBlock(QWidget):
+    remove_requested = Signal(object)
+
     def __init__(self, block: Block, parent=None):
         super().__init__(parent)
         self._block = block
         self._expanded = True
         self._output_widget: QPlainTextEdit | None = None
-        self._toggle_btn: QPushButton | None = None
         self._build_ui()
 
     def _build_ui(self):
-        self.setFrameShape(QFrame.StyledPanel)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(6)
+        row.addWidget(self._build_status_circle(), alignment=Qt.AlignTop | Qt.AlignHCenter)
+
+        card = self._build_card()
+        row.addWidget(card)
+
+    def _build_status_circle(self) -> QPushButton:
+        color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
+        btn = QPushButton("▶")
+        btn.setFixedSize(28, 28)
+        btn.setStyleSheet(
+            f"QPushButton {{ background: {color}; color: #0d0f1a; border: none;"
+            f" border-radius: 14px; font-size: 8pt; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {color}cc; }}"
+        )
+        btn.clicked.connect(self._toggle_output)
+        return btn
+
+    def _build_card(self) -> QFrame:
+        card = QFrame()
+        card.setFrameShape(QFrame.NoFrame)
+        card.setStyleSheet(
+            "QFrame { background-color: #161926; border-radius: 8px; border: none; }"
+        )
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(8)
 
         layout.addWidget(self._build_header())
 
@@ -43,80 +70,60 @@ class CommandBlock(QFrame):
             self._output_widget = self._build_output(output)
             layout.addWidget(self._output_widget)
 
-        accent = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
-        self.setStyleSheet(
-            f"QFrame {{ border-left: 3px solid {accent}; "
-            f"background-color: #1e1e2e; border-radius: 4px; }}"
-        )
+        layout.addWidget(self._build_footer())
+        return card
 
     def _build_header(self) -> QWidget:
         header = QWidget()
+        header.setStyleSheet("QWidget { background: transparent; }")
         layout = QHBoxLayout(header)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
-        # Left side: cwd + prompt + command text
-        left = QWidget()
-        left_layout = QHBoxLayout(left)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(4)
-
+        # cwd label
         cwd_text = _display_cwd(self._block.cwd)
         if cwd_text:
-            cwd_label = QLabel(cwd_text)
-            cwd_label.setStyleSheet("color: #89b4fa; font-family: Monospace; font-size: 9pt;")
-            left_layout.addWidget(cwd_label)
+            cwd_lbl = QLabel(cwd_text)
+            cwd_lbl.setStyleSheet(
+                "color: #89b4fa; font-family: Monospace; font-size: 9pt;"
+                " background: transparent;"
+            )
+            layout.addWidget(cwd_lbl)
 
-        prompt_label = QLabel("$")
-        prompt_label.setStyleSheet(
-            "color: #a6e3a1; font-family: Monospace; font-size: 10pt; font-weight: bold;"
+        # prompt symbol
+        prompt = QLabel("$")
+        prompt.setStyleSheet(
+            "color: #a6e3a1; font-family: Monospace; font-size: 10pt;"
+            " font-weight: bold; background: transparent;"
         )
-        left_layout.addWidget(prompt_label)
+        layout.addWidget(prompt)
 
+        # command text
         cmd_font = QFont("Monospace", 10)
         cmd_font.setBold(True)
-        cmd_label = QLabel(self._block.command.text)
-        cmd_label.setFont(cmd_font)
-        left_layout.addWidget(cmd_label)
+        cmd_lbl = QLabel(self._block.command.text)
+        cmd_lbl.setFont(cmd_font)
+        cmd_lbl.setStyleSheet("color: #cdd6f4; background: transparent;")
+        layout.addWidget(cmd_lbl)
 
-        layout.addWidget(left)
         layout.addStretch()
 
-        # Execution timestamp
-        timestamp = self._block.command.created_at.strftime("%H:%M:%S")
-        time_label = QLabel(timestamp)
-        time_label.setStyleSheet("color: #6c7086; font-size: 8pt;")
-        layout.addWidget(time_label)
+        # timestamp
+        ts = self._block.command.created_at.strftime("%H:%M:%S")
+        ts_lbl = QLabel(ts)
+        ts_lbl.setStyleSheet("color: #45475a; font-size: 8pt; background: transparent;")
+        layout.addWidget(ts_lbl)
 
-        # Exit code indicator
-        if self._block.exit_code == 0:
-            exit_label = QLabel("✓")
-            exit_label.setStyleSheet("color: #2ecc71; font-weight: bold;")
-        else:
-            exit_label = QLabel(f"✗ {self._block.exit_code}")
-            exit_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
-        layout.addWidget(exit_label)
-
-        # Copy command to clipboard
-        copy_cmd = self._make_button("copy cmd")
-        copy_cmd.clicked.connect(
-            lambda: QApplication.clipboard().setText(self._block.command.text)
+        # three-dot context menu
+        menu_btn = QPushButton("⋮")
+        menu_btn.setFixedSize(22, 22)
+        menu_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #45475a; border: none;"
+            " font-size: 13pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
         )
-        layout.addWidget(copy_cmd)
-
-        # Copy output and toggle collapse — only when there is output
-        output = self._block.stdout or self._block.stderr
-        if output.strip():
-            copy_out = self._make_button("copy out")
-            copy_out.clicked.connect(
-                lambda: QApplication.clipboard().setText(output.rstrip())
-            )
-            layout.addWidget(copy_out)
-
-            self._toggle_btn = self._make_button("▼")
-            self._toggle_btn.setFixedWidth(28)
-            self._toggle_btn.clicked.connect(self._toggle_output)
-            layout.addWidget(self._toggle_btn)
+        menu_btn.clicked.connect(self._show_menu)
+        layout.addWidget(menu_btn)
 
         return header
 
@@ -125,24 +132,71 @@ class CommandBlock(QFrame):
         out.setReadOnly(True)
         out.setPlainText(text.rstrip())
         out.setFont(QFont("Monospace", 9))
+        out.setStyleSheet(
+            "QPlainTextEdit { background: transparent; border: none;"
+            " color: #cdd6f4; selection-background-color: #313244; }"
+        )
         line_count = text.count("\n") + 1
         out.setFixedHeight(min(300, line_count * 20 + 16))
         return out
 
+    def _build_footer(self) -> QWidget:
+        footer = QWidget()
+        footer.setStyleSheet("QWidget { background: transparent; }")
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addStretch()
+
+        copy_cmd = self._make_button("Copiar comando")
+        copy_cmd.clicked.connect(
+            lambda: QApplication.clipboard().setText(self._block.command.text)
+        )
+        layout.addWidget(copy_cmd)
+
+        output = self._block.stdout or self._block.stderr
+        if output.strip():
+            copy_out = self._make_button("Copiar saída")
+            copy_out.clicked.connect(
+                lambda: QApplication.clipboard().setText(output.rstrip())
+            )
+            layout.addWidget(copy_out)
+
+        return footer
+
     def _toggle_output(self):
-        if self._output_widget is None or self._toggle_btn is None:
+        if self._output_widget is None:
             return
         self._expanded = not self._expanded
         self._output_widget.setVisible(self._expanded)
-        self._toggle_btn.setText("▼" if self._expanded else "▶")
+
+    def _show_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: #1e2235; color: #cdd6f4; border: 1px solid #313244;"
+            " border-radius: 6px; padding: 4px; }"
+            "QMenu::item { padding: 6px 16px; border-radius: 4px; }"
+            "QMenu::item:selected { background: #2a3f6e; }"
+        )
+        output = self._block.stdout or self._block.stderr
+
+        menu.addAction("Copiar comando",
+                       lambda: QApplication.clipboard().setText(self._block.command.text))
+        if output.strip():
+            menu.addAction("Copiar saída",
+                           lambda: QApplication.clipboard().setText(output.rstrip()))
+        menu.addSeparator()
+        menu.addAction("Remover bloco", lambda: self.remove_requested.emit(self))
+
+        menu.exec(self.cursor().pos())
 
     @staticmethod
     def _make_button(text: str) -> QPushButton:
         btn = QPushButton(text)
-        btn.setFixedHeight(22)
+        btn.setFixedHeight(24)
         btn.setStyleSheet(
-            "QPushButton { background: #313244; color: #cdd6f4; border-radius: 3px;"
-            " font-size: 8pt; padding: 0 6px; border: none; }"
-            "QPushButton:hover { background: #45475a; }"
+            "QPushButton { background: #1e2235; color: #6c7086; border-radius: 4px;"
+            " font-size: 8pt; padding: 0 12px; border: none; }"
+            "QPushButton:hover { background: #252840; color: #cdd6f4; }"
         )
         return btn
