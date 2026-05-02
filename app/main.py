@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QApplication
 from .ui.main_window import MainWindow
 from .core.command_executor import SubprocessExecutor
 from .domain.command import Command
+from .services.history_service import HistoryService
 
 
 def main():
@@ -51,12 +52,15 @@ def main():
     """)
 
     executor = SubprocessExecutor()
+    history = HistoryService()
     window = MainWindow()
 
     def on_command(text: str):
         command = Command(text=text)
         block = executor.execute(command)
+        history.add(block)
         window.add_block(block)
+        window.update_input_history(history.commands())
 
     window.command_submitted.connect(on_command)
     window.show()

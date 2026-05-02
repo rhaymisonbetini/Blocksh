@@ -49,3 +49,6 @@ class MainWindow(QMainWindow):
         self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
         )
+
+    def update_input_history(self, commands: list[str]) -> None:
+        self._input_bar.update_history(commands)
