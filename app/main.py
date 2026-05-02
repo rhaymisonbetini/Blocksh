@@ -60,6 +60,11 @@ def main():
     window.update_cwd(session.cwd_display())
 
     def on_command(text: str):
+        # clear is a UI built-in: wipe all blocks and return immediately
+        if text.strip() == "clear":
+            window.clear_blocks()
+            return
+
         command = Command(text=text)
 
         if session.try_cd(text):

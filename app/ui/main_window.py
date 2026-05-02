@@ -95,6 +95,13 @@ class MainWindow(QMainWindow):
             widget,
         )
 
+    def clear_blocks(self) -> None:
+        """Remove all command blocks, keeping only the trailing stretch item."""
+        while self._blocks_layout.count() > 1:
+            item = self._blocks_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
     def _remove_block(self, block_widget: QWidget) -> None:
         self._blocks_layout.removeWidget(block_widget)
         block_widget.deleteLater()
