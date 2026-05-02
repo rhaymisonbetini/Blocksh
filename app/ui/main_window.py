@@ -52,3 +52,6 @@ class MainWindow(QMainWindow):
 
     def update_input_history(self, commands: list[str]) -> None:
         self._input_bar.update_history(commands)
+
+    def update_cwd(self, display_path: str) -> None:
+        self._input_bar.update_cwd(display_path)

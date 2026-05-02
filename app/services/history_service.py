@@ -1,17 +1,29 @@
+from uuid import uuid4
 from ..domain.block import Block
+from ..infra.storage.history_repository import HistoryRepository
 
 
 class HistoryService:
-    """In-memory session history. Persistence (SQLite) comes in Phase 3."""
+    """
+    Manages session history with SQLite persistence.
+    Keeps an in-memory cache of the current session for fast access.
+    """
 
-    def __init__(self):
+    def __init__(self, repository: HistoryRepository):
+        self._repo = repository
+        self._session_id = str(uuid4())
         self._blocks: list[Block] = []
+
+    @property
+    def session_id(self) -> str:
+        return self._session_id
 
     def add(self, block: Block) -> None:
         self._blocks.append(block)
+        self._repo.save_block(block, self._session_id)
 
     def commands(self) -> list[str]:
-        """Returns ordered list of command texts for keyboard navigation."""
+        """Returns command texts for keyboard navigation (current session only)."""
         return [b.command.text for b in self._blocks]
 
     def blocks(self) -> list[Block]:

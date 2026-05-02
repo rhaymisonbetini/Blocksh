@@ -4,7 +4,20 @@ from PySide6.QtWidgets import (
     QWidget, QApplication,
 )
 from PySide6.QtGui import QFont
+from pathlib import Path
 from ..domain.block import Block
+
+
+def _display_cwd(cwd: str) -> str:
+    """Replaces home directory with ~ for display."""
+    if not cwd:
+        return ""
+    home = str(Path.home())
+    if cwd == home:
+        return "~"
+    if cwd.startswith(home + "/"):
+        return "~" + cwd[len(home):]
+    return cwd
 
 
 class CommandBlock(QFrame):
@@ -42,12 +55,31 @@ class CommandBlock(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
+        # Left side: cwd + prompt + command text
+        left = QWidget()
+        left_layout = QHBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(4)
+
+        cwd_text = _display_cwd(self._block.cwd)
+        if cwd_text:
+            cwd_label = QLabel(cwd_text)
+            cwd_label.setStyleSheet("color: #89b4fa; font-family: Monospace; font-size: 9pt;")
+            left_layout.addWidget(cwd_label)
+
+        prompt_label = QLabel("$")
+        prompt_label.setStyleSheet(
+            "color: #a6e3a1; font-family: Monospace; font-size: 10pt; font-weight: bold;"
+        )
+        left_layout.addWidget(prompt_label)
+
         cmd_font = QFont("Monospace", 10)
         cmd_font.setBold(True)
-        cmd_label = QLabel(f"$ {self._block.command.text}")
+        cmd_label = QLabel(self._block.command.text)
         cmd_label.setFont(cmd_font)
-        layout.addWidget(cmd_label)
+        left_layout.addWidget(cmd_label)
 
+        layout.addWidget(left)
         layout.addStretch()
 
         # Execution timestamp
@@ -56,7 +88,7 @@ class CommandBlock(QFrame):
         time_label.setStyleSheet("color: #6c7086; font-size: 8pt;")
         layout.addWidget(time_label)
 
-        # Exit code — green check or red cross with code
+        # Exit code indicator
         if self._block.exit_code == 0:
             exit_label = QLabel("✓")
             exit_label.setStyleSheet("color: #2ecc71; font-weight: bold;")
