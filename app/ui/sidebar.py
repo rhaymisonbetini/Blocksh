@@ -3,6 +3,7 @@ import platform
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QStackedWidget,
+    QButtonGroup,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -115,8 +116,12 @@ class Sidebar(QWidget):
         )
         layout.addWidget(logo)
 
+        nav_group = QButtonGroup(page)
+        nav_group.setExclusive(True)
+
         for icon, label, active in _NAV_MAIN:
             btn = _NavButton(icon, label, active)
+            nav_group.addButton(btn)
             if label == "Histórico":
                 btn.clicked.connect(self._open_history)
             layout.addWidget(btn)
@@ -130,7 +135,9 @@ class Sidebar(QWidget):
         layout.addSpacing(6)
 
         for icon, label, active in _NAV_FOOTER:
-            layout.addWidget(_NavButton(icon, label, active))
+            btn = _NavButton(icon, label, active)
+            nav_group.addButton(btn)
+            layout.addWidget(btn)
 
         layout.addSpacing(12)
         layout.addWidget(self._build_system_info())
