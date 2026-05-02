@@ -2,8 +2,11 @@ import sys
 from PySide6.QtWidgets import QApplication
 from .ui.main_window import MainWindow
 from .core.command_executor import SubprocessExecutor
+from .core.shell_session import ShellSession
 from .domain.command import Command
 from .services.history_service import HistoryService
+from .infra.storage.database import get_connection, initialize_schema
+from .infra.storage.history_repository import HistoryRepository
 
 
 def main():
@@ -51,16 +54,31 @@ def main():
         }
     """)
 
+    # Infrastructure
+    conn = get_connection()
+    initialize_schema(conn)
+    repository = HistoryRepository(conn)
+
+    # Core
     executor = SubprocessExecutor()
-    history = HistoryService()
+    session = ShellSession()
+    history = HistoryService(repository)
+
+    # UI
     window = MainWindow()
+    window.update_cwd(session.cwd_display())
 
     def on_command(text: str):
+        # Update cwd tracker before executing (handles `cd` built-in)
+        session.try_cd(text)
+
         command = Command(text=text)
-        block = executor.execute(command)
+        block = executor.execute(command, cwd=session.cwd, env=session.env)
+
         history.add(block)
         window.add_block(block)
         window.update_input_history(history.commands())
+        window.update_cwd(session.cwd_display())
 
     window.command_submitted.connect(on_command)
     window.show()

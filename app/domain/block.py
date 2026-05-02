@@ -8,3 +8,4 @@ class Block:
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0
+    cwd: str = ""  # working directory at execution time
