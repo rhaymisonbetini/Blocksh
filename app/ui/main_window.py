@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QFrame,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 from .command_block import CommandBlock
 from .input_bar import InputBar
 from .sidebar import Sidebar
@@ -87,6 +87,11 @@ class MainWindow(QMainWindow):
             self._blocks_layout.count() - 1,
             widget,
         )
+        # Defer scroll to the next event loop tick so the layout finishes
+        # recalculating sizes before we read verticalScrollBar().maximum()
+        QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self) -> None:
         self._scroll.verticalScrollBar().setValue(
             self._scroll.verticalScrollBar().maximum()
         )
