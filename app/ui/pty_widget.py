@@ -202,7 +202,7 @@ class PtyWidget(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 10)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self._canvas = _PtyCanvas(self._font, self._char_w, self._char_h)
         layout.addWidget(self._canvas)
@@ -240,7 +240,7 @@ class PtyWidget(QWidget):
 
     def _calc_dimensions(self) -> tuple[int, int]:
         w = max(1, self._canvas.width()  or self.width())
-        h = max(1, self._canvas.height() or (self.height() - 10))
+        h = max(1, self._canvas.height() or self.height())
         return max(5, h // self._char_h), max(10, w // self._char_w)
 
     def _kill_process(self) -> None:
