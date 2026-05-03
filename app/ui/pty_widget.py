@@ -1,9 +1,7 @@
-from html import escape
-
 import pyte
-from PySide6.QtCore import Qt, QEvent, QTimer, Signal
-from PySide6.QtGui import QFont, QFontMetrics, QKeyEvent
-from PySide6.QtWidgets import QSizePolicy, QTextEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
 
@@ -32,44 +30,50 @@ _NAMED: dict[str, str | None] = {
 _DEFAULT_FG = "#cdd6f4"
 _DEFAULT_BG = "#0d0f1a"
 
+_COLOR_BG   = QColor(_DEFAULT_BG)
+_COLOR_FG   = QColor(_DEFAULT_FG)
+_COLOR_CUR  = QColor("#cdd6f4")   # cursor block background
+_COLOR_CURT = QColor(_DEFAULT_BG) # cursor block text
+
 # ── key mapping ───────────────────────────────────────────────────────────────
 
 _KEY_MAP: dict[int, bytes] = {
-    Qt.Key_Return:   b"\r",
-    Qt.Key_Enter:    b"\r",
+    Qt.Key_Return:    b"\r",
+    Qt.Key_Enter:     b"\r",
     Qt.Key_Backspace: b"\x7f",
-    Qt.Key_Delete:   b"\x1b[3~",
-    Qt.Key_Up:       b"\x1b[A",
-    Qt.Key_Down:     b"\x1b[B",
-    Qt.Key_Right:    b"\x1b[C",
-    Qt.Key_Left:     b"\x1b[D",
-    Qt.Key_Home:     b"\x1b[H",
-    Qt.Key_End:      b"\x1b[F",
-    Qt.Key_PageUp:   b"\x1b[5~",
-    Qt.Key_PageDown: b"\x1b[6~",
-    Qt.Key_Tab:      b"\t",
-    Qt.Key_Escape:   b"\x1b",
-    Qt.Key_F1:       b"\x1bOP",
-    Qt.Key_F2:       b"\x1bOQ",
-    Qt.Key_F3:       b"\x1bOR",
-    Qt.Key_F4:       b"\x1bOS",
-    Qt.Key_F5:       b"\x1b[15~",
-    Qt.Key_F6:       b"\x1b[17~",
-    Qt.Key_F7:       b"\x1b[18~",
-    Qt.Key_F8:       b"\x1b[19~",
-    Qt.Key_F9:       b"\x1b[20~",
-    Qt.Key_F10:      b"\x1b[21~",
+    Qt.Key_Delete:    b"\x1b[3~",
+    Qt.Key_Up:        b"\x1b[A",
+    Qt.Key_Down:      b"\x1b[B",
+    Qt.Key_Right:     b"\x1b[C",
+    Qt.Key_Left:      b"\x1b[D",
+    Qt.Key_Home:      b"\x1b[H",
+    Qt.Key_End:       b"\x1b[F",
+    Qt.Key_PageUp:    b"\x1b[5~",
+    Qt.Key_PageDown:  b"\x1b[6~",
+    Qt.Key_Tab:       b"\t",
+    Qt.Key_Escape:    b"\x1b",
+    Qt.Key_F1:        b"\x1bOP",
+    Qt.Key_F2:        b"\x1bOQ",
+    Qt.Key_F3:        b"\x1bOR",
+    Qt.Key_F4:        b"\x1bOS",
+    Qt.Key_F5:        b"\x1b[15~",
+    Qt.Key_F6:        b"\x1b[17~",
+    Qt.Key_F7:        b"\x1b[18~",
+    Qt.Key_F8:        b"\x1b[19~",
+    Qt.Key_F9:        b"\x1b[20~",
+    Qt.Key_F10:       b"\x1b[21~",
 }
 
 
-def _resolve_color(pyte_color: str) -> str | None:
+def _resolve_color(pyte_color: str) -> QColor | None:
     if pyte_color in _NAMED:
-        return _NAMED[pyte_color]
+        v = _NAMED[pyte_color]
+        return QColor(v) if v else None
     if pyte_color.startswith("color"):
-        return _256_to_hex(int(pyte_color[5:]))
+        return QColor(_256_to_hex(int(pyte_color[5:])))
     if "/" in pyte_color:
         r, g, b = pyte_color.split("/")
-        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+        return QColor(int(r), int(g), int(b))
     return None
 
 
@@ -91,7 +95,76 @@ def _256_to_hex(n: int) -> str:
     return f"#{v:02x}{v:02x}{v:02x}"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ── canvas ────────────────────────────────────────────────────────────────────
+
+
+class _PtyCanvas(QWidget):
+    """
+    Direct QPainter renderer for a pyte screen buffer.
+
+    Each character is drawn at exactly (col * char_w, row * char_h) —
+    fixed grid, no HTML, no layout engine, no scrollbar. This eliminates
+    the sub-pixel height variance that caused visual tremor with QTextEdit.
+    """
+
+    def __init__(self, font: QFont, char_w: int, char_h: int, parent=None):
+        super().__init__(parent)
+        self._font      = font
+        self._font_bold = QFont(font)
+        self._font_bold.setBold(True)
+        self._char_w    = char_w
+        self._char_h    = char_h
+        self._ascent    = QFontMetrics(font).ascent()
+        self._screen: pyte.Screen | None = None
+
+        self.setFocusPolicy(Qt.NoFocus)
+        # We paint every pixel ourselves — no need for Qt to erase background.
+        self.setAttribute(Qt.WA_OpaquePaintEvent)
+
+    def set_screen(self, screen: pyte.Screen) -> None:
+        self._screen = screen
+
+    def paintEvent(self, _event) -> None:
+        if self._screen is None:
+            return
+
+        buf        = self._screen.buffer
+        cur_row    = self._screen.cursor.y
+        cur_col    = self._screen.cursor.x
+        cur_hidden = getattr(self._screen.cursor, "hidden", False)
+
+        cw      = self._char_w
+        ch      = self._char_h
+        ascent  = self._ascent
+        painter = QPainter(self)
+
+        for y in range(self._screen.lines):
+            row = buf[y]
+            py  = y * ch
+            for x in range(self._screen.columns):
+                cell = row[x]
+                data = cell.data or " "
+
+                fg: QColor = _resolve_color(cell.fg) or _COLOR_FG
+                bg: QColor = _resolve_color(cell.bg) or _COLOR_BG
+
+                if cell.reverse:
+                    fg, bg = bg, fg
+
+                if not cur_hidden and y == cur_row and x == cur_col:
+                    fg, bg = _COLOR_CURT, _COLOR_CUR
+
+                px = x * cw
+
+                painter.fillRect(px, py, cw, ch, bg)
+                painter.setFont(self._font_bold if cell.bold else self._font)
+                painter.setPen(fg)
+                painter.drawText(px, py + ascent, data)
+
+        painter.end()
+
+
+# ── widget ────────────────────────────────────────────────────────────────────
 
 
 class PtyWidget(QWidget):
@@ -99,7 +172,7 @@ class PtyWidget(QWidget):
     Full terminal emulator widget.
 
     Runs *cmd* inside a PTY, parses VT100/ANSI escape sequences via pyte,
-    and renders the virtual screen as styled HTML in a QTextEdit.
+    and renders the virtual screen via QPainter on a fixed character grid.
     Forwards all keyboard input back to the PTY master.
     """
 
@@ -107,9 +180,9 @@ class PtyWidget(QWidget):
 
     def __init__(self, cmd: str, cwd: str, env: dict, parent=None):
         super().__init__(parent)
-        self._cmd  = cmd
-        self._cwd  = cwd
-        self._env  = env
+        self._cmd = cmd
+        self._cwd = cwd
+        self._env = env
 
         self._process: PtyProcess | None  = None
         self._screen:  pyte.Screen | None = None
@@ -129,23 +202,10 @@ class PtyWidget(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 10)   # 10 px bottom padding
+        layout.setContentsMargins(0, 0, 0, 10)
 
-        self._display = QTextEdit()
-        self._display.setReadOnly(True)
-        self._display.setFont(self._font)
-        self._display.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        self._display.setStyleSheet(
-            "QTextEdit { background: #0d0f1a; color: #cdd6f4; border: none; }"
-        )
-        self._display.document().setDocumentMargin(0)
-        self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # Redirect all key events from the display back to PtyWidget so that
-        # QTextEdit doesn't consume Space/PageDown/etc. for its own scrolling.
-        self._display.setFocusPolicy(Qt.NoFocus)
-        self._display.installEventFilter(self)
-        layout.addWidget(self._display)
+        self._canvas = _PtyCanvas(self._font, self._char_w, self._char_h)
+        layout.addWidget(self._canvas)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -171,6 +231,7 @@ class PtyWidget(QWidget):
         rows, cols = self._calc_dimensions()
         self._screen = pyte.Screen(cols, rows)
         self._stream = pyte.ByteStream(self._screen)
+        self._canvas.set_screen(self._screen)
 
         self._process = PtyProcess(self._cmd, self._cwd, self._env, rows, cols)
         self._process.data_ready.connect(self._on_data)
@@ -178,9 +239,8 @@ class PtyWidget(QWidget):
         self._process.start_process()
 
     def _calc_dimensions(self) -> tuple[int, int]:
-        vp = self._display.viewport()
-        w  = max(1, vp.width()  if vp.width()  > 0 else self.width())
-        h  = max(1, vp.height() if vp.height() > 0 else self.height())
+        w = max(1, self._canvas.width()  or self.width())
+        h = max(1, self._canvas.height() or (self.height() - 10))
         return max(5, h // self._char_h), max(10, w // self._char_w)
 
     def _kill_process(self) -> None:
@@ -194,86 +254,14 @@ class PtyWidget(QWidget):
         self._stream.feed(data)
         if not self._render_pending:
             self._render_pending = True
-            QTimer.singleShot(33, self._render)   # coalesce at ~30 fps
+            QTimer.singleShot(33, self._render)
 
     def _render(self) -> None:
         self._render_pending = False
-        if self._screen is None:
-            return
-
-        buf       = self._screen.buffer
-        cur_row   = self._screen.cursor.y
-        cur_col   = self._screen.cursor.x
-        cur_hidden = getattr(self._screen.cursor, "hidden", False)
-
-        # line-height pinned to char_h so total document height = char_h * rows —
-        # a constant — regardless of which characters are on screen.
-        # Without this, Qt's HTML engine varies height by ±1-2 px per frame,
-        # causing the viewport to clip different amounts and creating visual tremor.
-        parts = [
-            f'<div style="font-family:\'Courier New\',Monospace;font-size:10pt;'
-            f'background:#0d0f1a;color:#cdd6f4;white-space:pre;'
-            f'line-height:{self._char_h}px;">'
-        ]
-
-        for y in range(self._screen.lines):
-            row = buf[y]
-            # group consecutive chars with the same style into one <span>
-            spans: list[tuple[str, str, str, bool]] = []
-            cur_fg = cur_bg = ""
-            cur_bold = False
-            cur_chars: list[str] = []
-
-            for x in range(self._screen.columns):
-                ch   = row[x]
-                data = ch.data or " "
-                fg   = _resolve_color(ch.fg) or _DEFAULT_FG
-                bg   = _resolve_color(ch.bg) or "transparent"
-                bold = ch.bold
-
-                if ch.reverse:
-                    fg, bg = (bg if bg != "transparent" else _DEFAULT_BG), fg
-
-                # cursor block — inverted colours so it's always visible
-                if not cur_hidden and y == cur_row and x == cur_col:
-                    fg, bg, bold = _DEFAULT_BG, "#cdd6f4", False
-
-                if (fg, bg, bold) != (cur_fg, cur_bg, cur_bold):
-                    if cur_chars:
-                        spans.append(("".join(cur_chars), cur_fg, cur_bg, cur_bold))
-                    cur_fg, cur_bg, cur_bold = fg, bg, bold
-                    cur_chars = [escape(data)]
-                else:
-                    cur_chars.append(escape(data))
-
-            if cur_chars:
-                spans.append(("".join(cur_chars), cur_fg, cur_bg, cur_bold))
-
-            for text, fg, bg, bold in spans:
-                style = f"color:{fg};"
-                if bg and bg != "transparent":
-                    style += f"background:{bg};"
-                if bold:
-                    style += "font-weight:bold;"
-                parts.append(f'<span style="{style}">{text}</span>')
-
-            parts.append("<br>")
-
-        parts.append("</div>")
-
-        # Suppress intermediate repaints so the full update lands in one frame.
-        self._display.setUpdatesEnabled(False)
-        self._display.setHtml("".join(parts))
-        self._display.verticalScrollBar().setValue(0)
-        self._display.setUpdatesEnabled(True)
+        if self._screen is not None:
+            self._canvas.update()   # schedules a single paintEvent, no HTML rebuild
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
-
-    def eventFilter(self, obj, event) -> bool:
-        if obj is self._display and event.type() == QEvent.Type.KeyPress:
-            self.keyPressEvent(event)
-            return True   # prevent QTextEdit from handling it (no scroll on Space)
-        return False
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self._process is None:
