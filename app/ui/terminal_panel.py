@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea, QFrame, QSizePolicy,
+    QWidget, QVBoxLayout, QScrollArea, QFrame,
 )
 from PySide6.QtCore import Signal, QPoint
 
@@ -179,21 +179,25 @@ class TerminalPanel(QWidget):
             return   # already running an interactive session
 
         self._active_cmd = command
-        self._scroll.setVisible(False)
-        self._sep.setVisible(False)
-        self._input_bar.setVisible(False)
 
+        # Overlay the PTY widget over the full panel geometry instead of
+        # inserting it into the layout — this guarantees pixel-perfect coverage
+        # with no leftover sliver from hidden siblings.
         self._pty_widget = PtyWidget(text, self._session.cwd, self._session.env, parent=self)
-        self._pty_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._pty_widget.session_finished.connect(self._on_pty_finished)
-        self._layout.insertWidget(1, self._pty_widget)
-        self._layout.setStretchFactor(self._pty_widget, 1)
+        self._pty_widget.setGeometry(self.rect())
         self._pty_widget.show()
+        self._pty_widget.raise_()
         self._pty_widget.setFocus()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._pty_widget:
+            self._pty_widget.setGeometry(self.rect())
 
     def _on_pty_finished(self, exit_code: int, final_text: str) -> None:
         if self._pty_widget:
-            self._layout.removeWidget(self._pty_widget)
+            self._pty_widget.hide()
             self._pty_widget.deleteLater()
             self._pty_widget = None
 
