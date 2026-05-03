@@ -200,7 +200,11 @@ class PtyWidget(QWidget):
         if self._screen is None:
             return
 
-        buf   = self._screen.buffer
+        buf       = self._screen.buffer
+        cur_row   = self._screen.cursor.y
+        cur_col   = self._screen.cursor.x
+        cur_hidden = getattr(self._screen.cursor, "hidden", False)
+
         parts = [
             '<div style="font-family:\'Courier New\',Monospace;font-size:10pt;'
             'background:#0d0f1a;color:#cdd6f4;white-space:pre;">'
@@ -223,6 +227,10 @@ class PtyWidget(QWidget):
 
                 if ch.reverse:
                     fg, bg = (bg if bg != "transparent" else _DEFAULT_BG), fg
+
+                # cursor block — inverted colours so it's always visible
+                if not cur_hidden and y == cur_row and x == cur_col:
+                    fg, bg, bold = _DEFAULT_BG, "#cdd6f4", False
 
                 if (fg, bg, bold) != (cur_fg, cur_bg, cur_bold):
                     if cur_chars:
