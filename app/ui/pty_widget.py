@@ -206,9 +206,14 @@ class PtyWidget(QWidget):
         cur_col   = self._screen.cursor.x
         cur_hidden = getattr(self._screen.cursor, "hidden", False)
 
+        # line-height pinned to char_h so total document height = char_h * rows —
+        # a constant — regardless of which characters are on screen.
+        # Without this, Qt's HTML engine varies height by ±1-2 px per frame,
+        # causing the viewport to clip different amounts and creating visual tremor.
         parts = [
-            '<div style="font-family:\'Courier New\',Monospace;font-size:10pt;'
-            'background:#0d0f1a;color:#cdd6f4;white-space:pre;">'
+            f'<div style="font-family:\'Courier New\',Monospace;font-size:10pt;'
+            f'background:#0d0f1a;color:#cdd6f4;white-space:pre;'
+            f'line-height:{self._char_h}px;">'
         ]
 
         for y in range(self._screen.lines):
