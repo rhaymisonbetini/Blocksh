@@ -108,7 +108,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 16, 8, 12)
         layout.setSpacing(2)
 
-        logo = QLabel(">_ Terminator")
+        logo = QLabel(">_ Blocksh")
         logo.setStyleSheet(
             "color: #cdd6f4; font-family: Monospace; font-size: 11pt;"
             " font-weight: bold; padding: 4px 8px 20px 8px;"
