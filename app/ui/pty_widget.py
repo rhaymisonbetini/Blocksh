@@ -129,7 +129,7 @@ class PtyWidget(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 10)   # 10 px bottom padding
 
         self._display = QTextEdit()
         self._display.setReadOnly(True)
@@ -138,6 +138,7 @@ class PtyWidget(QWidget):
         self._display.setStyleSheet(
             "QTextEdit { background: #0d0f1a; color: #cdd6f4; border: none; }"
         )
+        self._display.document().setDocumentMargin(0)
         self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # Redirect all key events from the display back to PtyWidget so that
@@ -193,7 +194,7 @@ class PtyWidget(QWidget):
         self._stream.feed(data)
         if not self._render_pending:
             self._render_pending = True
-            QTimer.singleShot(16, self._render)   # coalesce at ~60 fps
+            QTimer.singleShot(33, self._render)   # coalesce at ~30 fps
 
     def _render(self) -> None:
         self._render_pending = False
@@ -255,8 +256,11 @@ class PtyWidget(QWidget):
 
         parts.append("</div>")
 
+        # Suppress intermediate repaints so the full update lands in one frame.
+        self._display.setUpdatesEnabled(False)
         self._display.setHtml("".join(parts))
         self._display.verticalScrollBar().setValue(0)
+        self._display.setUpdatesEnabled(True)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
 
