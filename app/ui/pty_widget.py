@@ -1,7 +1,7 @@
 from html import escape
 
 import pyte
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QEvent, QTimer, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QKeyEvent
 from PySide6.QtWidgets import QSizePolicy, QTextEdit, QVBoxLayout, QWidget
 
@@ -140,6 +140,10 @@ class PtyWidget(QWidget):
         )
         self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Redirect all key events from the display back to PtyWidget so that
+        # QTextEdit doesn't consume Space/PageDown/etc. for its own scrolling.
+        self._display.setFocusPolicy(Qt.NoFocus)
+        self._display.installEventFilter(self)
         layout.addWidget(self._display)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
@@ -247,6 +251,12 @@ class PtyWidget(QWidget):
         self._display.verticalScrollBar().setValue(0)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self._display and event.type() == QEvent.Type.KeyPress:
+            self.keyPressEvent(event)
+            return True   # prevent QTextEdit from handling it (no scroll on Space)
+        return False
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self._process is None:
