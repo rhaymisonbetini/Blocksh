@@ -139,7 +139,7 @@ class PtyWidget(QWidget):
             "QTextEdit { background: #0d0f1a; color: #cdd6f4; border: none; }"
         )
         self._display.document().setDocumentMargin(0)
-        self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # Redirect all key events from the display back to PtyWidget so that
         # QTextEdit doesn't consume Space/PageDown/etc. for its own scrolling.
