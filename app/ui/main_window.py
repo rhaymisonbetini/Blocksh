@@ -1,23 +1,31 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QScrollArea, QFrame,
+    QStackedWidget, QFrame,
 )
-from PySide6.QtCore import Signal
-from .command_block import CommandBlock
-from .input_bar import InputBar
+from PySide6.QtGui import QKeySequence, QShortcut
+
 from .sidebar import Sidebar
 from .tab_bar import TabBar
-from ..domain.block import Block
+from .terminal_panel import TerminalPanel
+from ..core.command_executor import BaseExecutor
+from ..infra.storage.history_repository import HistoryRepository
 
 
 class MainWindow(QMainWindow):
-    command_submitted = Signal(str)
-
-    def __init__(self):
+    def __init__(self, executor: BaseExecutor, repository: HistoryRepository):
         super().__init__()
-        self.setWindowTitle("Terminator")
+        self._executor      = executor
+        self._repository    = repository
+        self._panels: list[TerminalPanel] = []
+        self._active_index  = 0
+
+        self.setWindowTitle("Blocksh")
         self.resize(1100, 700)
         self._build_ui()
+        self._setup_shortcuts()
+        self._add_tab()
+
+    # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
         central = QWidget()
@@ -27,17 +35,16 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Sidebar
         self._sidebar = Sidebar()
+        self._sidebar.history_open_requested.connect(self._load_history)
+        self._sidebar.command_selected.connect(self._on_history_command_selected)
         root.addWidget(self._sidebar)
 
-        # Vertical divider
         v_sep = QFrame()
         v_sep.setFrameShape(QFrame.VLine)
         v_sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-width: 1px; }")
         root.addWidget(v_sep)
 
-        # Right panel (tab bar + scroll + input)
         right = QWidget()
         right.setStyleSheet("QWidget { background-color: #0d0f1a; }")
         right_layout = QVBoxLayout(right)
@@ -45,6 +52,10 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(0)
 
         self._tab_bar = TabBar()
+        self._tab_bar.tab_add_requested.connect(self._add_tab)
+        self._tab_bar.tab_close_requested.connect(self._close_tab)
+        self._tab_bar.tab_switched.connect(self._switch_tab)
+        self._tab_bar.search_requested.connect(self._toggle_search)
         right_layout.addWidget(self._tab_bar)
 
         h_sep = QFrame()
@@ -52,63 +63,86 @@ class MainWindow(QMainWindow):
         h_sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
         right_layout.addWidget(h_sep)
 
-        # Scrollable blocks area
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-
-        self._blocks_container = QWidget()
-        self._blocks_container.setStyleSheet("QWidget { background: transparent; }")
-        self._blocks_layout = QVBoxLayout(self._blocks_container)
-        self._blocks_layout.setContentsMargins(20, 16, 20, 16)
-        self._blocks_layout.setSpacing(12)
-        self._blocks_layout.addStretch()
-
-        self._scroll.setWidget(self._blocks_container)
-        right_layout.addWidget(self._scroll)
-
-        # rangeChanged fires after Qt finishes recalculating content size,
-        # which is after all nested layouts are resolved — the only reliable
-        # point to read the real maximum and scroll to it.
-        self._scroll.verticalScrollBar().rangeChanged.connect(
-            lambda _min, maximum: self._scroll.verticalScrollBar().setValue(maximum)
-        )
-
-        # Bottom divider
-        b_sep = QFrame()
-        b_sep.setFrameShape(QFrame.HLine)
-        b_sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
-        right_layout.addWidget(b_sep)
-
-        self._input_bar = InputBar()
-        self._input_bar.command_submitted.connect(self.command_submitted)
-        right_layout.addWidget(self._input_bar)
+        self._stack = QStackedWidget()
+        right_layout.addWidget(self._stack)
 
         root.addWidget(right)
-        self._input_bar.focus()
 
-    def add_block(self, block: Block) -> None:
-        widget = CommandBlock(block)
-        widget.remove_requested.connect(self._remove_block)
-        self._blocks_layout.insertWidget(
-            self._blocks_layout.count() - 1,
-            widget,
+    def _setup_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(self._add_tab)
+        QShortcut(QKeySequence("Ctrl+W"), self).activated.connect(
+            lambda: self._close_tab(self._active_index)
         )
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search)
+        QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._clear_active)
 
-    def clear_blocks(self) -> None:
-        """Remove all command blocks, keeping only the trailing stretch item."""
-        while self._blocks_layout.count() > 1:
-            item = self._blocks_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    # ── tab management ────────────────────────────────────────────────────────
 
-    def _remove_block(self, block_widget: QWidget) -> None:
-        self._blocks_layout.removeWidget(block_widget)
-        block_widget.deleteLater()
+    def _add_tab(self) -> None:
+        panel = TerminalPanel(self._executor, self._repository)
+        panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd_changed(cwd, p))
+        self._panels.append(panel)
+        self._stack.addWidget(panel)
+        self._tab_bar.add_tab(f"Terminal {len(self._panels)}")
+        self._switch_tab(len(self._panels) - 1)
 
-    def update_input_history(self, commands: list[str]) -> None:
-        self._input_bar.update_history(commands)
+    def _close_tab(self, index: int) -> None:
+        if len(self._panels) <= 1:
+            return
+        panel = self._panels.pop(index)
+        self._stack.removeWidget(panel)
+        panel.deleteLater()
+        self._tab_bar.remove_tab(index)
 
-    def update_cwd(self, display_path: str) -> None:
-        self._sidebar.update_cwd(display_path)
-        self._input_bar.update_cwd(display_path)
+        if self._active_index > index:
+            self._active_index -= 1
+        self._active_index = min(self._active_index, len(self._panels) - 1)
+
+        self._tab_bar.set_active(self._active_index)
+        self._stack.setCurrentIndex(self._active_index)
+        self._panels[self._active_index].focus_input()
+        self._sidebar.update_cwd(self._panels[self._active_index].cwd_display)
+        self._update_title()
+
+    def _switch_tab(self, index: int) -> None:
+        if index < 0 or index >= len(self._panels):
+            return
+        self._active_index = index
+        self._tab_bar.set_active(index)
+        self._stack.setCurrentIndex(index)
+        self._panels[index].focus_input()
+        self._sidebar.update_cwd(self._panels[index].cwd_display)
+        self._update_title()
+
+    # ── active panel actions ──────────────────────────────────────────────────
+
+    def _toggle_search(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].toggle_search()
+
+    def _clear_active(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].clear_blocks()
+
+    # ── cwd / title ───────────────────────────────────────────────────────────
+
+    def _on_panel_cwd_changed(self, cwd: str, panel: TerminalPanel) -> None:
+        if panel in self._panels and self._panels.index(panel) == self._active_index:
+            self._sidebar.update_cwd(cwd)
+            self._update_title()
+
+    def _update_title(self) -> None:
+        if self._panels:
+            cwd = self._panels[self._active_index].cwd_display
+            self.setWindowTitle(f"Blocksh — {cwd}")
+
+    # ── history ───────────────────────────────────────────────────────────────
+
+    def _load_history(self) -> None:
+        blocks = self._repository.load_recent()
+        self._sidebar.show_history(blocks)
+
+    def _on_history_command_selected(self, text: str) -> None:
+        if self._panels:
+            self._panels[self._active_index].set_input_text(text)
+            self._panels[self._active_index].focus_input()
