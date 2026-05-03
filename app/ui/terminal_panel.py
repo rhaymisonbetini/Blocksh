@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea, QFrame,
+    QWidget, QVBoxLayout, QScrollArea, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import Signal, QPoint
 
 from .command_block import CommandBlock
 from .completion_popup import CompletionPopup
 from .input_bar import InputBar
+from .pty_widget import PtyWidget
 from .search_bar import SearchBar
 from ..core.command_executor import BaseExecutor
 from ..core.shell_session import ShellSession
@@ -15,6 +16,26 @@ from ..domain.command import Command
 from ..domain.block import Block
 from ..services.history_service import HistoryService
 from ..infra.storage.history_repository import HistoryRepository
+
+# Commands that always need a PTY regardless of arguments
+_ALWAYS_INTERACTIVE = frozenset({
+    "nano", "vi", "vim", "nvim", "emacs", "pico", "micro", "hx",
+    "less", "more", "man",
+    "htop", "top", "btop", "bpytop", "glances",
+    "ssh", "tmux", "screen",
+    "lazygit", "tig", "gitui",
+    "claude", "codex", "aider",
+    "mysql", "psql", "mongosh", "redis-cli",
+})
+
+# Commands that are interactive only when called with no arguments
+_INTERACTIVE_NO_ARGS = frozenset({
+    "bash", "sh", "zsh", "fish", "dash",
+    "python", "python3", "ipython", "bpython",
+    "node", "deno",
+    "irb", "pry",
+    "sqlite3",
+})
 
 
 class TerminalPanel(QWidget):
@@ -33,6 +54,8 @@ class TerminalPanel(QWidget):
 
         self._match_blocks: list[CommandBlock] = []
         self._match_index:  int = 0
+        self._pty_widget:   PtyWidget | None = None
+        self._active_cmd:   Command   | None = None
 
         self._build_ui()
         self._wire_completion()
@@ -60,7 +83,8 @@ class TerminalPanel(QWidget):
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        self._layout = QVBoxLayout(self)
+        layout = self._layout
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -89,10 +113,10 @@ class TerminalPanel(QWidget):
         )
         layout.addWidget(self._scroll)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
-        layout.addWidget(sep)
+        self._sep = QFrame()
+        self._sep.setFrameShape(QFrame.HLine)
+        self._sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
+        layout.addWidget(self._sep)
 
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
@@ -124,13 +148,74 @@ class TerminalPanel(QWidget):
         if self._session.try_cd(text):
             command.status = "done"
             block = Block(command=command, stdout="", stderr="", exit_code=0, cwd=self._session.cwd)
+            self._history.add(block)
+            self._add_block(block)
+            self._input_bar.update_history(self._history.commands())
+            self.cwd_changed.emit(self._session.cwd_display())
+        elif self._is_interactive(text):
+            self._start_pty_session(text, command)
         else:
             block = self._executor.execute(command, cwd=self._session.cwd, env=self._session.env)
+            self._history.add(block)
+            self._add_block(block)
+            self._input_bar.update_history(self._history.commands())
+            self.cwd_changed.emit(self._session.cwd_display())
 
-        self._history.add(block)
-        self._add_block(block)
-        self._input_bar.update_history(self._history.commands())
-        self.cwd_changed.emit(self._session.cwd_display())
+    # ── interactive / PTY session ─────────────────────────────────────────────
+
+    def _is_interactive(self, text: str) -> bool:
+        parts = text.strip().split()
+        if not parts:
+            return False
+        cmd = os.path.basename(parts[0])
+        if cmd in _ALWAYS_INTERACTIVE:
+            return True
+        if cmd in _INTERACTIVE_NO_ARGS and len(parts) == 1:
+            return True
+        return False
+
+    def _start_pty_session(self, text: str, command: Command) -> None:
+        if self._pty_widget is not None:
+            return   # already running an interactive session
+
+        self._active_cmd = command
+        self._scroll.setVisible(False)
+        self._sep.setVisible(False)
+        self._input_bar.setVisible(False)
+
+        self._pty_widget = PtyWidget(text, self._session.cwd, self._session.env, parent=self)
+        self._pty_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._pty_widget.session_finished.connect(self._on_pty_finished)
+        self._layout.insertWidget(1, self._pty_widget)
+        self._layout.setStretchFactor(self._pty_widget, 1)
+        self._pty_widget.show()
+        self._pty_widget.setFocus()
+
+    def _on_pty_finished(self, exit_code: int, final_text: str) -> None:
+        if self._pty_widget:
+            self._layout.removeWidget(self._pty_widget)
+            self._pty_widget.deleteLater()
+            self._pty_widget = None
+
+        self._scroll.setVisible(True)
+        self._sep.setVisible(True)
+        self._input_bar.setVisible(True)
+        self._input_bar.focus()
+
+        if self._active_cmd:
+            self._active_cmd.status = "done" if exit_code == 0 else "error"
+            block = Block(
+                command=self._active_cmd,
+                stdout=final_text,
+                stderr="",
+                exit_code=exit_code,
+                cwd=self._session.cwd,
+            )
+            self._history.add(block)
+            self._add_block(block)
+            self._input_bar.update_history(self._history.commands())
+            self.cwd_changed.emit(self._session.cwd_display())
+            self._active_cmd = None
 
     # ── tab completion ────────────────────────────────────────────────────────
 

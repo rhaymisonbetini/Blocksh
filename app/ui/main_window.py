@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
         self._panels: list[TerminalPanel] = []
         self._active_index  = 0
 
-        self.setWindowTitle("Terminator")
+        self.setWindowTitle("Blocksh")
         self.resize(1100, 700)
         self._build_ui()
         self._setup_shortcuts()
@@ -134,7 +134,7 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         if self._panels:
             cwd = self._panels[self._active_index].cwd_display
-            self.setWindowTitle(f"Terminator — {cwd}")
+            self.setWindowTitle(f"Blocksh — {cwd}")
 
     # ── history ───────────────────────────────────────────────────────────────
 
