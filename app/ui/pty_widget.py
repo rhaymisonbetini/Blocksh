@@ -136,7 +136,7 @@ class PtyWidget(QWidget):
         self._display.setFont(self._font)
         self._display.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self._display.setStyleSheet(
-            "QTextEdit { background: #0d0f1a; color: #cdd6f4; border: none; padding: 4px; }"
+            "QTextEdit { background: #0d0f1a; color: #cdd6f4; border: none; }"
         )
         self._display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -243,11 +243,8 @@ class PtyWidget(QWidget):
 
         parts.append("</div>")
 
-        sb        = self._display.verticalScrollBar()
-        at_bottom = sb.value() >= sb.maximum() - 4
         self._display.setHtml("".join(parts))
-        if at_bottom:
-            sb.setValue(sb.maximum())
+        self._display.verticalScrollBar().setValue(0)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
 
