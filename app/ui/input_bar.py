@@ -1,6 +1,21 @@
+import random
+
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
-from PySide6.QtCore import Signal, Qt, QRect, QSize
-from PySide6.QtGui import QFontMetrics, QTextCursor
+from PySide6.QtCore import Signal, Qt, QRect
+from PySide6.QtGui import QTextCursor
+
+_PLACEHOLDERS = [
+    "type your command...",
+    "what's today's command?",
+    "write something awesome...",
+    "the terminal awaits...",
+    "make it happen...",
+    "your move...",
+    "what shall we run today?",
+    "command me...",
+    "run something great...",
+    "ready when you are...",
+]
 
 
 class _HistoryInput(QPlainTextEdit):
@@ -16,23 +31,13 @@ class _HistoryInput(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.popup_open = False
-        self.setPlaceholderText("Digite um comando...")
+        self.setPlaceholderText(random.choice(_PLACEHOLDERS))
         self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.document().contentsChanged.connect(self.updateGeometry)
 
     def focusNextPrevChild(self, _next: bool) -> bool:
         return False   # Tab must reach keyPressEvent for completion
-
-    def sizeHint(self) -> QSize:
-        fm    = QFontMetrics(self.font())
-        lines = max(1, self.document().blockCount())
-        h     = lines * fm.lineSpacing() + 20   # 10 px top + 10 px bottom margin
-        return QSize(super().sizeHint().width(), min(160, max(40, h)))
-
-    def minimumSizeHint(self) -> QSize:
-        return self.sizeHint()
 
     def keyPressEvent(self, event):
         key  = event.key()
@@ -86,8 +91,7 @@ class InputBar(QWidget):
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
-        self.setMinimumHeight(48)
-        self.setMaximumHeight(200)
+        self.setFixedHeight(60)
         self._build_ui()
 
     def _build_ui(self):
@@ -96,14 +100,6 @@ class InputBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(10)
-
-        attach_btn = QPushButton("⊕")
-        attach_btn.setFixedSize(36, 36)
-        attach_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #45475a; border: none;"
-            " font-size: 16pt; }"
-            "QPushButton:hover { color: #6c7086; }"
-        )
 
         self._input = _HistoryInput()
         self._input.setStyleSheet(
@@ -129,7 +125,6 @@ class InputBar(QWidget):
         )
         run_btn.clicked.connect(self._submit)
 
-        layout.addWidget(attach_btn, 0, Qt.AlignTop)
         layout.addWidget(self._input)
         layout.addWidget(run_btn, 0, Qt.AlignTop)
 
