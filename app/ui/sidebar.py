@@ -9,7 +9,18 @@ from PySide6.QtCore import Qt, Signal
 
 from ..domain.block import Block
 from ..domain.favorite import Favorite
+from ..domain.project import Project
 from .theme import Palette, ThemeManager
+
+_TYPE_COLORS: dict[str, str] = {
+    "git":     "#89b4fa",
+    "node":    "#a6e3a1",
+    "php":     "#cba6f7",
+    "python":  "#f9e2af",
+    "rust":    "#fab387",
+    "go":      "#89dceb",
+    "generic": "#6c7086",
+}
 
 
 def _os_info() -> str:
@@ -92,6 +103,11 @@ class Sidebar(QWidget):
     favorite_command_selected = Signal(str)
     favorite_rename_requested = Signal(str, str)  # id, new_name
     favorite_delete_requested = Signal(str)        # id
+    projects_open_requested   = Signal()
+    project_selected          = Signal(str)        # path → cd <path>
+    project_add_requested     = Signal()           # add current directory
+    project_rename_requested  = Signal(str, str)   # id, new_name
+    project_delete_requested  = Signal(str)        # id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,10 +125,11 @@ class Sidebar(QWidget):
         layout.setSpacing(0)
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_nav_page())      # 0
+        self._stack.addWidget(self._build_nav_page())       # 0
         self._stack.addWidget(self._build_history_page())  # 1
         self._stack.addWidget(self._build_themes_page())   # 2
         self._stack.addWidget(self._build_favorites_page()) # 3
+        self._stack.addWidget(self._build_projects_page()) # 4
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
@@ -141,6 +158,8 @@ class Sidebar(QWidget):
                 btn.clicked.connect(self._open_history)
             elif label == "Favorites":
                 btn.clicked.connect(self._open_favorites)
+            elif label == "Projects":
+                btn.clicked.connect(self._open_projects)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -250,6 +269,69 @@ class Sidebar(QWidget):
 
         return page
 
+    def _build_projects_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+
+        # Header with back + title + add button
+        header_widget = QWidget()
+        header_widget.setStyleSheet("QWidget { background: transparent; }")
+        h_layout = QHBoxLayout(header_widget)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(4)
+
+        back_btn = QPushButton("←")
+        back_btn.setFixedSize(24, 24)
+        back_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+
+        title_lbl = QLabel("Projects")
+        title_lbl.setStyleSheet(
+            "color: #cdd6f4; font-size: 10pt; font-weight: bold; background: transparent;"
+        )
+
+        self._proj_add_btn = QPushButton("+")
+        self._proj_add_btn.setFixedSize(22, 22)
+        self._proj_add_btn.setToolTip("Add current directory")
+        self._proj_add_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 14pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        self._proj_add_btn.clicked.connect(self.project_add_requested)
+
+        h_layout.addWidget(back_btn)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        h_layout.addWidget(self._proj_add_btn)
+        layout.addWidget(header_widget)
+
+        self._projs_sep = QFrame()
+        self._projs_sep.setFrameShape(QFrame.HLine)
+        layout.addWidget(self._projs_sep)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._projs_list = QWidget()
+        self._projs_list.setStyleSheet("QWidget { background: transparent; }")
+        self._projs_list_layout = QVBoxLayout(self._projs_list)
+        self._projs_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._projs_list_layout.setSpacing(4)
+
+        scroll.setWidget(self._projs_list)
+        layout.addWidget(scroll)
+
+        self._expanded_projects: set[str] = set()
+
+        return page
+
     def _build_sub_header(self, title: str, back_fn) -> QWidget:
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
@@ -312,6 +394,7 @@ class Sidebar(QWidget):
         self._hist_sep.setStyleSheet(sep_style)
         self._themes_sep.setStyleSheet(sep_style)
         self._favs_sep.setStyleSheet(sep_style)
+        self._projs_sep.setStyleSheet(sep_style)
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
@@ -328,6 +411,10 @@ class Sidebar(QWidget):
     def _open_favorites(self) -> None:
         self._stack.setCurrentIndex(3)
         self.favorites_open_requested.emit()
+
+    def _open_projects(self) -> None:
+        self._stack.setCurrentIndex(4)
+        self.projects_open_requested.emit()
 
     def _open_themes(self) -> None:
         self._refresh_themes_list(ThemeManager.instance().current)
@@ -458,6 +545,159 @@ class Sidebar(QWidget):
 
         menu.addAction("Rename", _rename)
         menu.addAction("Delete", lambda: self.favorite_delete_requested.emit(fav.id))
+        menu.exec(self.cursor().pos())
+
+    def show_projects(self, projects_with_history: list[tuple[Project, list[Block]]]) -> None:
+        p = ThemeManager.instance().current
+        while self._projs_list_layout.count() > 0:
+            item = self._projs_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not projects_with_history:
+            empty = QLabel("No projects yet\nNavigate to a project and run a command, or use + to add")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setWordWrap(True)
+            empty.setStyleSheet(
+                f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
+            )
+            self._projs_list_layout.addWidget(empty)
+            self._projs_list_layout.addStretch()
+            return
+
+        for proj, history in projects_with_history:
+            row = self._build_project_row(proj, history, p)
+            self._projs_list_layout.addWidget(row)
+
+        self._projs_list_layout.addStretch()
+
+    def _build_project_row(
+        self, proj: Project, history: list[Block], p: Palette
+    ) -> QWidget:
+        from pathlib import Path
+        container = QWidget()
+        container.setStyleSheet("QWidget { background: transparent; }")
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(0)
+
+        # ── main row ──────────────────────────────────────────────────────────
+        main_row = QWidget()
+        main_row.setStyleSheet("QWidget { background: transparent; }")
+        h = QHBoxLayout(main_row)
+        h.setContentsMargins(4, 4, 4, 4)
+        h.setSpacing(4)
+
+        is_expanded = proj.id in self._expanded_projects
+        toggle_btn = QPushButton("▾" if is_expanded else "▸")
+        toggle_btn.setFixedSize(16, 16)
+        toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 9pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; }}"
+        )
+        h.addWidget(toggle_btn)
+
+        name_btn = QPushButton(proj.name)
+        name_btn.setFixedHeight(22)
+        name_btn.setToolTip(proj.path)
+        name_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
+            f" font-size: 9pt; font-weight: bold; text-align: left; padding: 0 2px; }}"
+            f"QPushButton:hover {{ color: {p.blue}; }}"
+        )
+        name_btn.clicked.connect(
+            lambda checked, path=proj.path: self.project_selected.emit(path)
+        )
+        h.addWidget(name_btn, 1)
+
+        type_color = _TYPE_COLORS.get(proj.type, "#6c7086")
+        type_lbl = QLabel(proj.type)
+        type_lbl.setStyleSheet(
+            f"color: {type_color}; font-size: 7pt; background: transparent; padding: 1px 4px;"
+        )
+        h.addWidget(type_lbl)
+
+        vbox.addWidget(main_row)
+
+        # ── path label ────────────────────────────────────────────────────────
+        home = str(Path.home())
+        display_path = "~" + proj.path[len(home):] if proj.path.startswith(home) else proj.path
+        path_lbl = QLabel(display_path)
+        path_lbl.setStyleSheet(
+            f"color: {p.fg_dim}; font-family: Monospace; font-size: 7pt;"
+            f" background: transparent; padding: 0 26px 2px 26px;"
+        )
+        path_lbl.setWordWrap(True)
+        vbox.addWidget(path_lbl)
+
+        # ── history sub-list ──────────────────────────────────────────────────
+        hist_widget = QWidget()
+        hist_widget.setStyleSheet("QWidget { background: transparent; }")
+        hist_layout = QVBoxLayout(hist_widget)
+        hist_layout.setContentsMargins(24, 0, 0, 4)
+        hist_layout.setSpacing(1)
+
+        for block in history:
+            cmd_btn = QPushButton(block.command.text)
+            cmd_btn.setFixedHeight(20)
+            cmd_btn.setToolTip(block.command.text)
+            color = p.fg_muted if block.exit_code == 0 else p.red
+            cmd_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {color}; border: none;"
+                f" font-family: Monospace; font-size: 8pt; text-align: left; padding: 0 4px; }}"
+                f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
+            )
+            cmd_btn.clicked.connect(
+                lambda checked, t=block.command.text: self.command_selected.emit(t)
+            )
+            hist_layout.addWidget(cmd_btn)
+
+        if not history:
+            no_hist = QLabel("No commands yet")
+            no_hist.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 0 4px;")
+            hist_layout.addWidget(no_hist)
+
+        hist_widget.setVisible(is_expanded)
+        vbox.addWidget(hist_widget)
+
+        # ── toggle wiring ─────────────────────────────────────────────────────
+        def _toggle(checked=False, pid=proj.id, tw=hist_widget, tb=toggle_btn):
+            if pid in self._expanded_projects:
+                self._expanded_projects.discard(pid)
+                tw.setVisible(False)
+                tb.setText("▸")
+            else:
+                self._expanded_projects.add(pid)
+                tw.setVisible(True)
+                tb.setText("▾")
+
+        toggle_btn.clicked.connect(_toggle)
+
+        # ── right-click menu ──────────────────────────────────────────────────
+        container.setContextMenuPolicy(Qt.CustomContextMenu)
+        container.customContextMenuRequested.connect(
+            lambda pos, pr=proj: self._show_project_menu(pr)
+        )
+
+        return container
+
+    def _show_project_menu(self, proj: Project) -> None:
+        p = ThemeManager.instance().current
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 6px; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
+        )
+
+        def _rename():
+            name, ok = QInputDialog.getText(self, "Rename Project", "New name:", text=proj.name)
+            if ok and name.strip():
+                self.project_rename_requested.emit(proj.id, name.strip())
+
+        menu.addAction("Rename", _rename)
+        menu.addAction("Remove", lambda: self.project_delete_requested.emit(proj.id))
         menu.exec(self.cursor().pos())
 
     def update_cwd(self, display_path: str) -> None:

@@ -7,6 +7,8 @@ from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
 from .infra.storage.favorites_repository import FavoritesRepository
 from .services.favorites_service import FavoritesService
+from .infra.storage.project_repository import ProjectRepository
+from .services.project_service import ProjectService
 
 
 def _build_global_qss(p: Palette) -> str:
@@ -60,9 +62,11 @@ def main():
     repository         = HistoryRepository(conn)
     favorites_repo     = FavoritesRepository(conn)
     favorites_service  = FavoritesService(favorites_repo)
+    project_repo       = ProjectRepository(conn)
+    project_service    = ProjectService(project_repo)
     executor           = SubprocessExecutor()
 
-    window = MainWindow(executor, repository, favorites_service)
+    window = MainWindow(executor, repository, favorites_service, project_service)
     window.show()
 
     sys.exit(app.exec())
