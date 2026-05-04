@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from abc import ABC, abstractmethod
@@ -39,6 +40,7 @@ class SubprocessExecutor(BaseExecutor):
                 stdin=subprocess.DEVNULL,
                 cwd=cwd,
                 env=env,
+                preexec_fn=os.setsid,
             )
             command.status = "done" if result.returncode == 0 else "error"
             stderr = _BASH_NOISE.sub("", result.stderr).strip()
