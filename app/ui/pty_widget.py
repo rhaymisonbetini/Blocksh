@@ -4,6 +4,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
+from .theme import Palette, ThemeManager
 
 # ── colour palette (Catppuccin Mocha) ────────────────────────────────────────
 
@@ -117,12 +118,24 @@ class _PtyCanvas(QWidget):
         self._ascent    = QFontMetrics(font).ascent()
         self._screen: pyte.Screen | None = None
 
+        p = ThemeManager.instance().current
+        self._color_bg        = QColor(p.pty_bg)
+        self._color_fg        = QColor(p.pty_fg)
+        self._color_cursor_bg = QColor(p.pty_cursor_bg)
+        self._color_cursor_fg = QColor(p.pty_cursor_fg)
+
         self.setFocusPolicy(Qt.NoFocus)
-        # We paint every pixel ourselves — no need for Qt to erase background.
         self.setAttribute(Qt.WA_OpaquePaintEvent)
 
     def set_screen(self, screen: pyte.Screen) -> None:
         self._screen = screen
+
+    def apply_theme(self, p: Palette) -> None:
+        self._color_bg        = QColor(p.pty_bg)
+        self._color_fg        = QColor(p.pty_fg)
+        self._color_cursor_bg = QColor(p.pty_cursor_bg)
+        self._color_cursor_fg = QColor(p.pty_cursor_fg)
+        self.update()
 
     def paintEvent(self, _event) -> None:
         if self._screen is None:
@@ -145,14 +158,14 @@ class _PtyCanvas(QWidget):
                 cell = row[x]
                 data = cell.data or " "
 
-                fg: QColor = _resolve_color(cell.fg) or _COLOR_FG
-                bg: QColor = _resolve_color(cell.bg) or _COLOR_BG
+                fg: QColor = _resolve_color(cell.fg) or self._color_fg
+                bg: QColor = _resolve_color(cell.bg) or self._color_bg
 
                 if cell.reverse:
                     fg, bg = bg, fg
 
                 if not cur_hidden and y == cur_row and x == cur_col:
-                    fg, bg = _COLOR_CURT, _COLOR_CUR
+                    fg, bg = self._color_cursor_fg, self._color_cursor_bg
 
                 px = x * cw
 
@@ -197,6 +210,9 @@ class PtyWidget(QWidget):
         self._build_ui()
         self.setFocusPolicy(Qt.StrongFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        _tm = ThemeManager.instance()
+        _tm.theme_changed.connect(self._on_theme_changed)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -285,6 +301,9 @@ class PtyWidget(QWidget):
             self._process.write(text.encode("utf-8", errors="replace"))
 
     # ── session end ───────────────────────────────────────────────────────────
+
+    def _on_theme_changed(self, p: Palette) -> None:
+        self._canvas.apply_theme(p)
 
     def _on_process_finished(self, exit_code: int) -> None:
         if self._screen:

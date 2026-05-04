@@ -1,45 +1,57 @@
 import sys
 from PySide6.QtWidgets import QApplication
 from .ui.main_window import MainWindow
+from .ui.theme import Palette, ThemeManager
 from .core.command_executor import SubprocessExecutor
 from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
 
 
-def main():
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    app.setStyleSheet("""
-        QMainWindow, QWidget { background-color: #0d0f1a; color: #cdd6f4; }
-        QScrollArea  { border: none; background: transparent; }
-        QScrollBar:vertical {
-            background: #0d0f1a;
+def _build_global_qss(p: Palette) -> str:
+    return f"""
+        QMainWindow, QWidget {{ background-color: {p.bg}; color: {p.fg}; }}
+        QScrollArea  {{ border: none; background: transparent; }}
+        QScrollBar:vertical {{
+            background: {p.bg};
             width: 6px;
             border-radius: 3px;
-        }
-        QScrollBar::handle:vertical {
-            background: #1e2235;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {p.bg_overlay};
             border-radius: 3px;
             min-height: 24px;
-        }
+        }}
         QScrollBar::add-line:vertical,
-        QScrollBar::sub-line:vertical { height: 0; }
-        QLabel       { color: #cdd6f4; background: transparent; }
-        QPlainTextEdit {
+        QScrollBar::sub-line:vertical {{ height: 0; }}
+        QLabel       {{ color: {p.fg}; background: transparent; }}
+        QPlainTextEdit {{
             background: transparent;
-            color: #cdd6f4;
+            color: {p.fg};
             border: none;
             font-family: Monospace;
             font-size: 9pt;
-        }
-        QMenu {
-            background: #1e2235;
-            color: #cdd6f4;
-            border: 1px solid #313244;
+        }}
+        QMenu {{
+            background: {p.bg_overlay};
+            color: {p.fg};
+            border: 1px solid {p.border};
             border-radius: 6px;
-        }
-        QMenu::item:selected { background: #2a3f6e; }
-    """)
+        }}
+        QMenu::item:selected {{ background: {p.bg_selected}; }}
+    """
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    ThemeManager.instance()   # init singleton, loads persisted preference
+
+    def _apply_global(p: Palette) -> None:
+        app.setStyleSheet(_build_global_qss(p))
+
+    ThemeManager.instance().theme_changed.connect(_apply_global)
+    _apply_global(ThemeManager.instance().current)
 
     conn = get_connection()
     initialize_schema(conn)

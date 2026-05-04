@@ -7,6 +7,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from .sidebar import Sidebar
 from .tab_bar import TabBar
 from .terminal_panel import TerminalPanel
+from .theme import Palette, ThemeManager
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
 
@@ -38,15 +39,14 @@ class MainWindow(QMainWindow):
         self._sidebar = Sidebar()
         self._sidebar.history_open_requested.connect(self._load_history)
         self._sidebar.command_selected.connect(self._on_history_command_selected)
+        self._sidebar.theme_selected.connect(lambda name: ThemeManager.instance().set_theme(name))
         root.addWidget(self._sidebar)
 
-        v_sep = QFrame()
-        v_sep.setFrameShape(QFrame.VLine)
-        v_sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-width: 1px; }")
-        root.addWidget(v_sep)
+        self._v_sep = QFrame()
+        self._v_sep.setFrameShape(QFrame.VLine)
+        root.addWidget(self._v_sep)
 
         right = QWidget()
-        right.setStyleSheet("QWidget { background-color: #0d0f1a; }")
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
@@ -57,12 +57,15 @@ class MainWindow(QMainWindow):
         self._tab_bar.tab_switched.connect(self._switch_tab)
         self._tab_bar.search_requested.connect(self._toggle_search)
         self._tab_bar.collapse_all_requested.connect(self._toggle_collapse_all)
+
+        _tm = ThemeManager.instance()
+        self.apply_theme(_tm.current)
+        _tm.theme_changed.connect(self.apply_theme)
         right_layout.addWidget(self._tab_bar)
 
-        h_sep = QFrame()
-        h_sep.setFrameShape(QFrame.HLine)
-        h_sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
-        right_layout.addWidget(h_sep)
+        self._h_sep = QFrame()
+        self._h_sep.setFrameShape(QFrame.HLine)
+        right_layout.addWidget(self._h_sep)
 
         self._stack = QStackedWidget()
         right_layout.addWidget(self._stack)
@@ -116,6 +119,17 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     # ── active panel actions ──────────────────────────────────────────────────
+
+    def apply_theme(self, p: Palette) -> None:
+        self.setStyleSheet(f"QMainWindow, QWidget {{ background-color: {p.bg}; color: {p.fg}; }}")
+        if hasattr(self, "_v_sep"):
+            self._v_sep.setStyleSheet(
+                f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-width: 1px; }}"
+            )
+        if hasattr(self, "_h_sep"):
+            self._h_sep.setStyleSheet(
+                f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
+            )
 
     def _toggle_search(self) -> None:
         if self._panels:

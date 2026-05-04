@@ -10,6 +10,7 @@ from .completion_popup import CompletionPopup
 from .input_bar import InputBar
 from .pty_widget import PtyWidget
 from .search_bar import SearchBar
+from .theme import Palette, ThemeManager
 from ..core.command_executor import BaseExecutor
 from ..core.shell_session import ShellSession
 from ..domain.command import Command
@@ -59,6 +60,10 @@ class TerminalPanel(QWidget):
 
         self._build_ui()
         self._wire_completion()
+
+        _tm = ThemeManager.instance()
+        self.apply_theme(_tm.current)
+        _tm.theme_changed.connect(self.apply_theme)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -115,7 +120,6 @@ class TerminalPanel(QWidget):
 
         self._sep = QFrame()
         self._sep.setFrameShape(QFrame.HLine)
-        self._sep.setStyleSheet("QFrame { color: #1e2235; background: #1e2235; max-height: 1px; }")
         layout.addWidget(self._sep)
 
         self._input_bar = InputBar()
@@ -333,6 +337,15 @@ class TerminalPanel(QWidget):
         widget.deleteLater()
         if self._search_bar.isVisible():
             self._on_search(self._search_bar.query())
+
+    def apply_theme(self, p: Palette) -> None:
+        self._scroll.setStyleSheet(
+            f"QScrollArea {{ border: none; background: {p.bg}; }}"
+        )
+        self._blocks_container.setStyleSheet(f"QWidget {{ background: {p.bg}; }}")
+        self._sep.setStyleSheet(
+            f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
+        )
 
     def toggle_collapse_all(self) -> None:
         blocks = self._all_blocks()
