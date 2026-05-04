@@ -35,5 +35,14 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             cwd          TEXT NOT NULL DEFAULT '',
             created_at   TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS projects (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            path          TEXT NOT NULL UNIQUE,
+            type          TEXT NOT NULL DEFAULT 'generic',
+            created_at    TEXT NOT NULL,
+            last_accessed TEXT NOT NULL
+        );
     """)
     conn.commit()

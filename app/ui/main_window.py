@@ -11,6 +11,7 @@ from .theme import Palette, ThemeManager
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
 from ..services.favorites_service import FavoritesService
+from ..services.project_service import ProjectService
 
 
 class MainWindow(QMainWindow):
@@ -19,11 +20,13 @@ class MainWindow(QMainWindow):
         executor: BaseExecutor,
         repository: HistoryRepository,
         favorites_service: FavoritesService,
+        project_service: ProjectService,
     ):
         super().__init__()
         self._executor           = executor
         self._repository         = repository
         self._favorites_service  = favorites_service
+        self._project_service    = project_service
         self._panels: list[TerminalPanel] = []
         self._active_index  = 0
 
@@ -51,6 +54,11 @@ class MainWindow(QMainWindow):
         self._sidebar.favorite_command_selected.connect(self._on_favorite_command_selected)
         self._sidebar.favorite_rename_requested.connect(self._on_favorite_rename)
         self._sidebar.favorite_delete_requested.connect(self._on_favorite_delete)
+        self._sidebar.projects_open_requested.connect(self._load_projects)
+        self._sidebar.project_selected.connect(self._on_project_selected)
+        self._sidebar.project_add_requested.connect(self._on_project_add)
+        self._sidebar.project_rename_requested.connect(self._on_project_rename)
+        self._sidebar.project_delete_requested.connect(self._on_project_delete)
         root.addWidget(self._sidebar)
 
         self._v_sep = QFrame()
@@ -161,6 +169,9 @@ class MainWindow(QMainWindow):
         if panel in self._panels and self._panels.index(panel) == self._active_index:
             self._sidebar.update_cwd(cwd)
             self._update_title()
+        # auto-register cwd as project if it has known markers
+        if cwd:
+            self._project_service.auto_register(cwd)
 
     def _update_title(self) -> None:
         if self._panels:
@@ -199,3 +210,39 @@ class MainWindow(QMainWindow):
     def _on_favorite_delete(self, fav_id: str) -> None:
         self._favorites_service.remove(fav_id)
         self._load_favorites()
+
+    # ── projects ──────────────────────────────────────────────────────────────
+
+    def _load_projects(self) -> None:
+        projects = self._project_service.all()
+        with_history = [
+            (p, self._project_service.history_for(p, self._repository))
+            for p in projects
+        ]
+        self._sidebar.show_projects(with_history)
+
+    def _on_project_selected(self, path: str) -> None:
+        if self._panels:
+            self._panels[self._active_index].set_input_text(f"cd {path}")
+            self._panels[self._active_index].focus_input()
+        self._project_service.touch(path)
+
+    def _on_project_add(self) -> None:
+        if not self._panels:
+            return
+        from PySide6.QtWidgets import QInputDialog
+        cwd = self._panels[self._active_index]._session.cwd
+        name, ok = QInputDialog.getText(
+            self, "Add Project", "Project name:", text=cwd.split("/")[-1] or cwd
+        )
+        if ok and name.strip():
+            self._project_service.register(cwd, name.strip())
+            self._load_projects()
+
+    def _on_project_rename(self, project_id: str, name: str) -> None:
+        self._project_service.rename(project_id, name)
+        self._load_projects()
+
+    def _on_project_delete(self, project_id: str) -> None:
+        self._project_service.remove(project_id)
+        self._load_projects()

@@ -38,6 +38,14 @@ class HistoryRepository:
         ).fetchall()
         return [self._row_to_block(r) for r in reversed(rows)]
 
+    def load_by_cwd_prefix(self, cwd_prefix: str, limit: int = 10) -> list[Block]:
+        """Returns most recent blocks whose cwd starts with cwd_prefix, oldest first."""
+        rows = self._conn.execute(
+            "SELECT * FROM blocks WHERE cwd LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (cwd_prefix.rstrip("/") + "%", limit),
+        ).fetchall()
+        return [self._row_to_block(r) for r in reversed(rows)]
+
     def load_session(self, session_id: str) -> list[Block]:
         rows = self._conn.execute(
             "SELECT * FROM blocks WHERE session_id = ? ORDER BY created_at",
