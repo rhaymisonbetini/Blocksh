@@ -101,6 +101,13 @@ class CommandBlock(QWidget):
         self._expanded = True
         self._output_widget: QPlainTextEdit | None = None
         self._card: QFrame | None = None
+        # themed header/footer widgets — stored so apply_theme can reach them
+        self._cwd_lbl:    QLabel | None      = None
+        self._prompt_lbl: QLabel | None      = None
+        self._cmd_lbl:    QLabel | None      = None
+        self._ts_lbl:     QLabel | None      = None
+        self._menu_btn:   QPushButton | None = None
+        self._footer_btns: list[QPushButton] = []
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -146,6 +153,31 @@ class CommandBlock(QWidget):
                 f"QPlainTextEdit {{ background: transparent; border: none;"
                 f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
             )
+        if self._cwd_lbl:
+            self._cwd_lbl.setStyleSheet(
+                f"color: {p.blue}; font-family: Monospace; font-size: 9pt; background: transparent;"
+            )
+        if self._prompt_lbl:
+            self._prompt_lbl.setStyleSheet(
+                f"color: {p.green}; font-family: Monospace; font-size: 10pt;"
+                f" font-weight: bold; background: transparent;"
+            )
+        if self._cmd_lbl:
+            self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
+        if self._ts_lbl:
+            self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
+        if self._menu_btn:
+            self._menu_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
+                f"QPushButton:hover {{ color: {p.fg}; }}"
+            )
+        btn_style = (
+            f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg_muted}; border-radius: 4px;"
+            f" font-size: 8pt; padding: 0 12px; border: none; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover2}; color: {p.fg}; }}"
+        )
+        for btn in self._footer_btns:
+            btn.setStyleSheet(btn_style)
 
     def _build_ui(self):
         row = QHBoxLayout(self)
@@ -200,40 +232,40 @@ class CommandBlock(QWidget):
 
         cwd_text = _display_cwd(self._block.cwd)
         if cwd_text:
-            cwd_lbl = QLabel(cwd_text)
-            cwd_lbl.setStyleSheet(
+            self._cwd_lbl = QLabel(cwd_text)
+            self._cwd_lbl.setStyleSheet(
                 f"color: {p.blue}; font-family: Monospace; font-size: 9pt; background: transparent;"
             )
-            layout.addWidget(cwd_lbl)
+            layout.addWidget(self._cwd_lbl)
 
-        prompt = QLabel("$")
-        prompt.setStyleSheet(
+        self._prompt_lbl = QLabel("$")
+        self._prompt_lbl.setStyleSheet(
             f"color: {p.green}; font-family: Monospace; font-size: 10pt;"
             f" font-weight: bold; background: transparent;"
         )
-        layout.addWidget(prompt)
+        layout.addWidget(self._prompt_lbl)
 
         cmd_font = QFont("Monospace", 10)
         cmd_font.setBold(True)
-        cmd_lbl = QLabel(self._block.command.text)
-        cmd_lbl.setFont(cmd_font)
-        cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
-        layout.addWidget(cmd_lbl)
+        self._cmd_lbl = QLabel(self._block.command.text)
+        self._cmd_lbl.setFont(cmd_font)
+        self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
+        layout.addWidget(self._cmd_lbl)
 
         layout.addStretch()
 
-        ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
-        ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
-        layout.addWidget(ts_lbl)
+        self._ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
+        self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
+        layout.addWidget(self._ts_lbl)
 
-        menu_btn = QPushButton("⋮")
-        menu_btn.setFixedSize(22, 22)
-        menu_btn.setStyleSheet(
+        self._menu_btn = QPushButton("⋮")
+        self._menu_btn.setFixedSize(22, 22)
+        self._menu_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
-        menu_btn.clicked.connect(self._show_menu)
-        layout.addWidget(menu_btn)
+        self._menu_btn.clicked.connect(self._show_menu)
+        layout.addWidget(self._menu_btn)
 
         return header
 
@@ -276,11 +308,14 @@ class CommandBlock(QWidget):
         layout.setSpacing(8)
         layout.addStretch()
 
+        self._footer_btns.clear()
+
         copy_cmd = self._make_button("Copy command", p)
         copy_cmd.clicked.connect(
             lambda: QApplication.clipboard().setText(self._block.command.text)
         )
         layout.addWidget(copy_cmd)
+        self._footer_btns.append(copy_cmd)
 
         output = self._block.stdout or self._block.stderr
         if output.strip():
@@ -289,6 +324,7 @@ class CommandBlock(QWidget):
                 lambda: QApplication.clipboard().setText(output.rstrip())
             )
             layout.addWidget(copy_out)
+            self._footer_btns.append(copy_out)
 
         return footer
 
