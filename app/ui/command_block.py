@@ -243,12 +243,10 @@ class CommandBlock(QWidget):
             is_stderr,
         )
 
-        # Height: fit content exactly, capped at 300px
         line_h = QFontMetrics(font).lineSpacing()
         line_count = text.rstrip().count("\n") + 1
-        # document margin (4px * 2) + 4px breathing room
         content_h = line_count * line_h + 12
-        out.setFixedHeight(min(300, max(line_h + 12, content_h)))
+        out.setFixedHeight(max(line_h + 12, content_h))
 
         return out
 
