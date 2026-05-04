@@ -59,10 +59,11 @@ class _Tab(QWidget):
 
 
 class TabBar(QWidget):
-    tab_add_requested   = Signal()
-    tab_close_requested = Signal(int)
-    tab_switched        = Signal(int)
-    search_requested    = Signal()
+    tab_add_requested    = Signal()
+    tab_close_requested  = Signal(int)
+    tab_switched         = Signal(int)
+    search_requested     = Signal()
+    collapse_all_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -102,6 +103,17 @@ class TabBar(QWidget):
         )
         search_btn.clicked.connect(self.search_requested)
         layout.addWidget(search_btn)
+
+        collapse_btn = QPushButton("⊟")
+        collapse_btn.setFixedSize(28, 28)
+        collapse_btn.setToolTip("Collapse / expand all blocks")
+        collapse_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none;"
+            " border-radius: 6px; font-size: 13pt; }"
+            "QPushButton:hover { background: #1e2235; color: #cdd6f4; }"
+        )
+        collapse_btn.clicked.connect(self.collapse_all_requested)
+        layout.addWidget(collapse_btn)
 
         settings_btn = QPushButton("⚙")
         settings_btn.setFixedSize(28, 28)

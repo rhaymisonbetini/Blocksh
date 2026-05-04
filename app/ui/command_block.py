@@ -260,7 +260,7 @@ class CommandBlock(QWidget):
         layout.setSpacing(8)
         layout.addStretch()
 
-        copy_cmd = self._make_button("Copiar comando")
+        copy_cmd = self._make_button("Copy command")
         copy_cmd.clicked.connect(
             lambda: QApplication.clipboard().setText(self._block.command.text)
         )
@@ -268,13 +268,23 @@ class CommandBlock(QWidget):
 
         output = self._block.stdout or self._block.stderr
         if output.strip():
-            copy_out = self._make_button("Copiar saída")
+            copy_out = self._make_button("Copy output")
             copy_out.clicked.connect(
                 lambda: QApplication.clipboard().setText(output.rstrip())
             )
             layout.addWidget(copy_out)
 
         return footer
+
+    def collapse(self) -> None:
+        if self._output_widget:
+            self._expanded = False
+            self._output_widget.setVisible(False)
+
+    def expand(self) -> None:
+        if self._output_widget:
+            self._expanded = True
+            self._output_widget.setVisible(True)
 
     def _toggle_output(self):
         if self._output_widget is None:
@@ -291,13 +301,13 @@ class CommandBlock(QWidget):
             "QMenu::item:selected { background: #2a3f6e; }"
         )
         output = self._block.stdout or self._block.stderr
-        menu.addAction("Copiar comando",
+        menu.addAction("Copy command",
                        lambda: QApplication.clipboard().setText(self._block.command.text))
         if output.strip():
-            menu.addAction("Copiar saída",
+            menu.addAction("Copy output",
                            lambda: QApplication.clipboard().setText(output.rstrip()))
         menu.addSeparator()
-        menu.addAction("Remover bloco", lambda: self.remove_requested.emit(self))
+        menu.addAction("Remove block", lambda: self.remove_requested.emit(self))
         menu.exec(self.cursor().pos())
 
     @staticmethod
