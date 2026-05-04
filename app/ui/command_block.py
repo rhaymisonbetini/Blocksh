@@ -13,6 +13,29 @@ from PySide6.QtGui import (
 from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
 
+# Matches ANSI/VT100 escape sequences: CSI (ESC[…), and other single-char ESC sequences
+_ANSI_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
+
+
+def _clean_output(text: str) -> str:
+    """Strip ANSI codes and simulate carriage-return overwrites."""
+    text = _ANSI_RE.sub('', text)
+    lines = []
+    for line in text.split('\n'):
+        if '\r' in line:
+            segments = line.split('\r')
+            buf = list(segments[0])
+            for seg in segments[1:]:
+                for i, ch in enumerate(seg):
+                    if i < len(buf):
+                        buf[i] = ch
+                    else:
+                        buf.append(ch)
+            line = ''.join(buf).rstrip()
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 # ── Colour palette for output highlighting ────────────────────────────────────
 _C_DIR      = "#89b4fa"   # blue  — directories
 _C_SYMLINK  = "#94e2d5"   # cyan  — symlinks
@@ -226,15 +249,14 @@ class CommandBlock(QWidget):
         out.setReadOnly(True)
         out.setFont(font)
         out.document().setDocumentMargin(4)
-        out.setPlainText(text.rstrip())
+        out.setPlainText(_clean_output(text).rstrip())
         out.setStyleSheet(
             "QPlainTextEdit { background: transparent; border: none;"
             " color: #cdd6f4; selection-background-color: #313244; }"
         )
-        out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        # Attach highlighter (ls directory/file colouring, stderr error colouring)
         is_stderr = bool(self._block.stderr) and not self._block.stdout
         _OutputHighlighter(
             out.document(),
@@ -243,9 +265,9 @@ class CommandBlock(QWidget):
             is_stderr,
         )
 
+        # Use blockCount from the Qt document — accurate after setPlainText
         line_h = QFontMetrics(font).lineSpacing()
-        line_count = text.rstrip().count("\n") + 1
-        content_h = line_count * line_h + 12
+        content_h = out.document().blockCount() * line_h + 12
         out.setFixedHeight(max(line_h + 12, content_h))
 
         return out
