@@ -27,6 +27,7 @@ _ALWAYS_INTERACTIVE = frozenset({
     "lazygit", "tig", "gitui",
     "claude", "codex", "aider",
     "mysql", "psql", "mongosh", "redis-cli",
+    "sudo",
 })
 
 # Commands that are interactive only when called with no arguments

@@ -14,6 +14,28 @@ from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
 
+# Matches ANSI/VT100 escape sequences: CSI (ESC[…), and other single-char ESC sequences
+_ANSI_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
+
+
+def _clean_output(text: str) -> str:
+    """Strip ANSI codes and simulate carriage-return overwrites."""
+    text = _ANSI_RE.sub('', text)
+    lines = []
+    for line in text.split('\n'):
+        if '\r' in line:
+            segments = line.split('\r')
+            buf = list(segments[0])
+            for seg in segments[1:]:
+                for i, ch in enumerate(seg):
+                    if i < len(buf):
+                        buf[i] = ch
+                    else:
+                        buf.append(ch)
+            line = ''.join(buf).rstrip()
+        lines.append(line)
+    return '\n'.join(lines)
+
 
 def _display_cwd(cwd: str) -> str:
     if not cwd:
@@ -279,12 +301,12 @@ class CommandBlock(QWidget):
         out.setReadOnly(True)
         out.setFont(font)
         out.document().setDocumentMargin(4)
-        out.setPlainText(text.rstrip())
+        out.setPlainText(_clean_output(text).rstrip())
         out.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none;"
             f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
         )
-        out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         is_stderr = bool(self._block.stderr) and not self._block.stdout
@@ -296,9 +318,8 @@ class CommandBlock(QWidget):
         )
 
         line_h = QFontMetrics(font).lineSpacing()
-        line_count = text.rstrip().count("\n") + 1
-        content_h = line_count * line_h + 12
-        out.setFixedHeight(min(300, max(line_h + 12, content_h)))
+        content_h = out.document().blockCount() * line_h + 12
+        out.setFixedHeight(max(line_h + 12, content_h))
 
         return out
 
