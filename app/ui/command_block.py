@@ -12,14 +12,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
-
-# ── Colour palette for output highlighting ────────────────────────────────────
-_C_DIR      = "#89b4fa"   # blue  — directories
-_C_SYMLINK  = "#94e2d5"   # cyan  — symlinks
-_C_EXEC     = "#a6e3a1"   # green — executables
-_C_TOTAL    = "#45475a"   # grey  — "total N" header line
-_C_ERROR    = "#f38ba8"   # red   — stderr output
-# ─────────────────────────────────────────────────────────────────────────────
+from .theme import Palette, ThemeManager
 
 
 def _display_cwd(cwd: str) -> str:
@@ -34,66 +27,62 @@ def _display_cwd(cwd: str) -> str:
 
 
 def _is_ls_long(cmd: str) -> bool:
-    """True when the command is any ls variant with the -l flag."""
     return bool(re.search(r"\bls\b[^|;]*-[a-zA-Z]*l", cmd))
 
 
 def _is_ls(cmd: str) -> bool:
-    """True for any ls invocation."""
     c = cmd.strip()
     return c == "ls" or c.startswith("ls ") or c.startswith("ls\t")
 
 
 class _OutputHighlighter(QSyntaxHighlighter):
-    """
-    Syntax highlighter for command output.
-
-    Strategies:
-      • ls -l / ls -la  → permission string first char (d/l/-) decides colour
-      • ls (plain)      → os.path.isdir/islink against block.cwd for each entry
-      • stderr output   → entire block coloured as error
-    """
-
     def __init__(self, document, command: str, cwd: str, is_stderr: bool):
         super().__init__(document)
         self._cwd        = cwd
         self._is_stderr  = is_stderr
         self._ls_long    = _is_ls_long(command)
         self._ls_plain   = (not self._ls_long) and _is_ls(command)
+        self._update_colors()
+
+    def _update_colors(self) -> None:
+        p = ThemeManager.instance().current
+        self._c_dir     = p.blue
+        self._c_symlink = p.cyan
+        self._c_exec    = p.green
+        self._c_total   = p.fg_dim
+        self._c_error   = p.red
 
     def highlightBlock(self, text: str) -> None:
+        self._update_colors()
         if self._is_stderr:
-            self._fmt(text, _C_ERROR)
+            self._fmt(text, self._c_error)
             return
-
         if self._ls_long:
             self._highlight_long(text)
         elif self._ls_plain:
             self._highlight_plain(text)
 
     def _highlight_long(self, text: str) -> None:
-        """Colour based on the permission-string first character."""
         if text.startswith("total "):
-            self._fmt(text, _C_TOTAL)
+            self._fmt(text, self._c_total)
         elif text.startswith("d"):
-            self._fmt(text, _C_DIR, bold=True)
+            self._fmt(text, self._c_dir, bold=True)
         elif text.startswith("l"):
-            self._fmt(text, _C_SYMLINK)
+            self._fmt(text, self._c_symlink)
         elif text.startswith("-") and len(text) > 3 and "x" in text[:10]:
-            self._fmt(text, _C_EXEC)
+            self._fmt(text, self._c_exec)
 
     def _highlight_plain(self, text: str) -> None:
-        """Check each entry against the filesystem using block.cwd."""
         entry = text.strip()
         if not entry or not self._cwd:
             return
         full = os.path.join(self._cwd, entry)
         if os.path.islink(full):
-            self._fmt(text, _C_SYMLINK)
+            self._fmt(text, self._c_symlink)
         elif os.path.isdir(full):
-            self._fmt(text, _C_DIR, bold=True)
+            self._fmt(text, self._c_dir, bold=True)
         elif os.access(full, os.X_OK) and os.path.isfile(full):
-            self._fmt(text, _C_EXEC)
+            self._fmt(text, self._c_exec)
 
     def _fmt(self, text: str, color: str, bold: bool = False) -> None:
         fmt = QTextCharFormat()
@@ -114,6 +103,10 @@ class CommandBlock(QWidget):
         self._card: QFrame | None = None
         self._build_ui()
 
+        _tm = ThemeManager.instance()
+        self.apply_theme(_tm.current)
+        _tm.theme_changed.connect(self.apply_theme)
+
     @property
     def searchable_text(self) -> str:
         output = self._block.stdout or self._block.stderr
@@ -122,14 +115,36 @@ class CommandBlock(QWidget):
     def set_search_highlight(self, active: bool) -> None:
         if self._card is None:
             return
+        p = ThemeManager.instance().current
         if active:
             self._card.setStyleSheet(
-                "QFrame { background-color: #1e2a3a; border-radius: 8px;"
-                " border: 1px solid #89b4fa; }"
+                f"QFrame {{ background-color: {p.bg_highlight}; border-radius: 8px;"
+                f" border: 1px solid {p.blue}; }}"
             )
         else:
             self._card.setStyleSheet(
-                "QFrame { background-color: #161926; border-radius: 8px; border: none; }"
+                f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
+            )
+
+    def collapse(self) -> None:
+        if self._output_widget:
+            self._expanded = False
+            self._output_widget.setVisible(False)
+
+    def expand(self) -> None:
+        if self._output_widget:
+            self._expanded = True
+            self._output_widget.setVisible(True)
+
+    def apply_theme(self, p: Palette) -> None:
+        if self._card:
+            self._card.setStyleSheet(
+                f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
+            )
+        if self._output_widget:
+            self._output_widget.setStyleSheet(
+                f"QPlainTextEdit {{ background: transparent; border: none;"
+                f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
             )
 
     def _build_ui(self):
@@ -153,11 +168,12 @@ class CommandBlock(QWidget):
         return btn
 
     def _build_card(self) -> QFrame:
+        p = ThemeManager.instance().current
         card = QFrame()
-        self._card = card  # keep reference for search highlighting
+        self._card = card
         card.setFrameShape(QFrame.NoFrame)
         card.setStyleSheet(
-            "QFrame { background-color: #161926; border-radius: 8px; border: none; }"
+            f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
         )
 
         layout = QVBoxLayout(card)
@@ -175,6 +191,7 @@ class CommandBlock(QWidget):
         return card
 
     def _build_header(self) -> QWidget:
+        p = ThemeManager.instance().current
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
         layout = QHBoxLayout(header)
@@ -185,14 +202,14 @@ class CommandBlock(QWidget):
         if cwd_text:
             cwd_lbl = QLabel(cwd_text)
             cwd_lbl.setStyleSheet(
-                "color: #89b4fa; font-family: Monospace; font-size: 9pt; background: transparent;"
+                f"color: {p.blue}; font-family: Monospace; font-size: 9pt; background: transparent;"
             )
             layout.addWidget(cwd_lbl)
 
         prompt = QLabel("$")
         prompt.setStyleSheet(
-            "color: #a6e3a1; font-family: Monospace; font-size: 10pt;"
-            " font-weight: bold; background: transparent;"
+            f"color: {p.green}; font-family: Monospace; font-size: 10pt;"
+            f" font-weight: bold; background: transparent;"
         )
         layout.addWidget(prompt)
 
@@ -200,20 +217,20 @@ class CommandBlock(QWidget):
         cmd_font.setBold(True)
         cmd_lbl = QLabel(self._block.command.text)
         cmd_lbl.setFont(cmd_font)
-        cmd_lbl.setStyleSheet("color: #cdd6f4; background: transparent;")
+        cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
         layout.addWidget(cmd_lbl)
 
         layout.addStretch()
 
         ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
-        ts_lbl.setStyleSheet("color: #45475a; font-size: 8pt; background: transparent;")
+        ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         layout.addWidget(ts_lbl)
 
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(22, 22)
         menu_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #45475a; border: none; font-size: 13pt; }"
-            "QPushButton:hover { color: #cdd6f4; }"
+            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         menu_btn.clicked.connect(self._show_menu)
         layout.addWidget(menu_btn)
@@ -221,6 +238,7 @@ class CommandBlock(QWidget):
         return header
 
     def _build_output(self, text: str) -> QPlainTextEdit:
+        p = ThemeManager.instance().current
         font = QFont("Monospace", 9)
         out = QPlainTextEdit()
         out.setReadOnly(True)
@@ -228,13 +246,12 @@ class CommandBlock(QWidget):
         out.document().setDocumentMargin(4)
         out.setPlainText(text.rstrip())
         out.setStyleSheet(
-            "QPlainTextEdit { background: transparent; border: none;"
-            " color: #cdd6f4; selection-background-color: #313244; }"
+            f"QPlainTextEdit {{ background: transparent; border: none;"
+            f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
         )
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        # Attach highlighter (ls directory/file colouring, stderr error colouring)
         is_stderr = bool(self._block.stderr) and not self._block.stdout
         _OutputHighlighter(
             out.document(),
@@ -243,16 +260,15 @@ class CommandBlock(QWidget):
             is_stderr,
         )
 
-        # Height: fit content exactly, capped at 300px
         line_h = QFontMetrics(font).lineSpacing()
         line_count = text.rstrip().count("\n") + 1
-        # document margin (4px * 2) + 4px breathing room
         content_h = line_count * line_h + 12
         out.setFixedHeight(min(300, max(line_h + 12, content_h)))
 
         return out
 
     def _build_footer(self) -> QWidget:
+        p = ThemeManager.instance().current
         footer = QWidget()
         footer.setStyleSheet("QWidget { background: transparent; }")
         layout = QHBoxLayout(footer)
@@ -260,7 +276,7 @@ class CommandBlock(QWidget):
         layout.setSpacing(8)
         layout.addStretch()
 
-        copy_cmd = self._make_button("Copy command")
+        copy_cmd = self._make_button("Copy command", p)
         copy_cmd.clicked.connect(
             lambda: QApplication.clipboard().setText(self._block.command.text)
         )
@@ -268,23 +284,13 @@ class CommandBlock(QWidget):
 
         output = self._block.stdout or self._block.stderr
         if output.strip():
-            copy_out = self._make_button("Copy output")
+            copy_out = self._make_button("Copy output", p)
             copy_out.clicked.connect(
                 lambda: QApplication.clipboard().setText(output.rstrip())
             )
             layout.addWidget(copy_out)
 
         return footer
-
-    def collapse(self) -> None:
-        if self._output_widget:
-            self._expanded = False
-            self._output_widget.setVisible(False)
-
-    def expand(self) -> None:
-        if self._output_widget:
-            self._expanded = True
-            self._output_widget.setVisible(True)
 
     def _toggle_output(self):
         if self._output_widget is None:
@@ -293,12 +299,13 @@ class CommandBlock(QWidget):
         self._output_widget.setVisible(self._expanded)
 
     def _show_menu(self):
+        p = ThemeManager.instance().current
         menu = QMenu(self)
         menu.setStyleSheet(
-            "QMenu { background: #1e2235; color: #cdd6f4; border: 1px solid #313244;"
-            " border-radius: 6px; padding: 4px; }"
-            "QMenu::item { padding: 6px 16px; border-radius: 4px; }"
-            "QMenu::item:selected { background: #2a3f6e; }"
+            f"QMenu {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 6px; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
         )
         output = self._block.stdout or self._block.stderr
         menu.addAction("Copy command",
@@ -311,12 +318,12 @@ class CommandBlock(QWidget):
         menu.exec(self.cursor().pos())
 
     @staticmethod
-    def _make_button(text: str) -> QPushButton:
+    def _make_button(text: str, p: Palette) -> QPushButton:
         btn = QPushButton(text)
         btn.setFixedHeight(24)
         btn.setStyleSheet(
-            "QPushButton { background: #1e2235; color: #6c7086; border-radius: 4px;"
-            " font-size: 8pt; padding: 0 12px; border: none; }"
-            "QPushButton:hover { background: #252840; color: #cdd6f4; }"
+            f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg_muted}; border-radius: 4px;"
+            f" font-size: 8pt; padding: 0 12px; border: none; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover2}; color: {p.fg}; }}"
         )
         return btn

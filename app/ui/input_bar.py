@@ -4,6 +4,8 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
 from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtGui import QTextCursor
 
+from .theme import Palette, ThemeManager
+
 _PLACEHOLDERS = [
     "type your command...",
     "what's today's command?",
@@ -37,7 +39,7 @@ class _HistoryInput(QPlainTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def focusNextPrevChild(self, _next: bool) -> bool:
-        return False   # Tab must reach keyPressEvent for completion
+        return False
 
     def keyPressEvent(self, event):
         key  = event.key()
@@ -51,7 +53,6 @@ class _HistoryInput(QPlainTextEdit):
             self.esc_pressed.emit()
             return
 
-        # completion navigation takes priority over history / submit
         if self.popup_open:
             if key == Qt.Key_Up:
                 self.completion_up.emit()
@@ -65,12 +66,11 @@ class _HistoryInput(QPlainTextEdit):
 
         if key in (Qt.Key_Return, Qt.Key_Enter):
             if mods & Qt.ShiftModifier:
-                super().keyPressEvent(event)   # insert real newline
+                super().keyPressEvent(event)
             else:
                 self.command_submitted.emit()
             return
 
-        # Up / Down navigate history only when on the first / last line
         if key == Qt.Key_Up:
             if self.textCursor().blockNumber() == 0:
                 self.go_previous.emit()
@@ -94,18 +94,16 @@ class InputBar(QWidget):
         self.setFixedHeight(60)
         self._build_ui()
 
-    def _build_ui(self):
-        self.setStyleSheet("QWidget { background-color: #0d0f1a; }")
+        _tm = ThemeManager.instance()
+        self.apply_theme(_tm.current)
+        _tm.theme_changed.connect(self.apply_theme)
 
+    def _build_ui(self):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(10)
 
         self._input = _HistoryInput()
-        self._input.setStyleSheet(
-            "QPlainTextEdit { background: transparent; border: none; color: #cdd6f4;"
-            " font-family: Monospace; font-size: 10pt; }"
-        )
         self._input.command_submitted.connect(self._submit)
         self._input.go_previous.connect(self._navigate_previous)
         self._input.go_next.connect(self._navigate_next)
@@ -113,20 +111,27 @@ class InputBar(QWidget):
         self._text_changed_callbacks: list = []
         self._input.textChanged.connect(self._on_text_changed)
 
-        run_btn = QPushButton("▶  Run")
-        run_btn.setFixedHeight(36)
-        run_btn.setMinimumWidth(88)
-        run_btn.setStyleSheet(
+        self._run_btn = QPushButton("▶  Run")
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.setMinimumWidth(88)
+        self._run_btn.setStyleSheet(
             "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
             " border-radius: 6px; font-weight: bold; font-size: 10pt;"
             " padding: 0 18px; }"
             "QPushButton:hover { background: #27ae60; }"
             "QPushButton:pressed { background: #1e8449; }"
         )
-        run_btn.clicked.connect(self._submit)
+        self._run_btn.clicked.connect(self._submit)
 
         layout.addWidget(self._input)
-        layout.addWidget(run_btn, 0, Qt.AlignTop)
+        layout.addWidget(self._run_btn, 0, Qt.AlignTop)
+
+    def apply_theme(self, p: Palette) -> None:
+        self.setStyleSheet(f"QWidget {{ background-color: {p.bg}; }}")
+        self._input.setStyleSheet(
+            f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
+            f" font-family: Monospace; font-size: 10pt; }}"
+        )
 
     # ── submission ────────────────────────────────────────────────────────────
 
@@ -166,15 +171,11 @@ class InputBar(QWidget):
         c.movePosition(QTextCursor.End)
         self._input.setTextCursor(c)
 
-    # ── text_changed bridge (QLineEdit had str arg; QPlainTextEdit does not) ──
-
     def _on_text_changed(self):
-        # Emit via a plain Signal stored on the instance isn't possible after
-        # construction, so we use a list of connected callables instead.
         for cb in self._text_changed_callbacks:
             cb(self._input.toPlainText())
 
-    # ── completion API (called / connected by TerminalPanel) ──────────────────
+    # ── completion API ────────────────────────────────────────────────────────
 
     @property
     def tab_pressed(self):
@@ -196,8 +197,6 @@ class InputBar(QWidget):
     def completion_accepted(self):
         return self._input.completion_accepted
 
-    # text_changed is special: QPlainTextEdit.textChanged carries no arg, but
-    # TerminalPanel expects a str.  We expose a tiny adapter object.
     class _TextChangedProxy:
         def __init__(self, bar: "InputBar"):
             self._bar = bar
@@ -218,7 +217,6 @@ class InputBar(QWidget):
         return self._text_changed_proxy
 
     def get_completion_context(self) -> tuple[str, str, str]:
-        """Return (text_before_last_word, dir_prefix, name_prefix)."""
         cursor = self._input.textCursor()
         text   = self._input.toPlainText()[:cursor.position()]
         parts  = text.rsplit(" ", 1)
@@ -234,7 +232,6 @@ class InputBar(QWidget):
         cursor   = self._input.textCursor()
         full     = self._input.toPlainText()
         pos      = cursor.position()
-        # replace only the token portion (everything from base start to cursor)
         new_text = base + completion + full[pos:]
         self._input.setPlainText(new_text)
         c = self._input.textCursor()
@@ -245,7 +242,6 @@ class InputBar(QWidget):
         self._input.popup_open = open
 
     def input_field_rect(self) -> QRect:
-        """Input field geometry in InputBar-local coordinates."""
         return self._input.geometry()
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -254,7 +250,7 @@ class InputBar(QWidget):
         self._history = commands
 
     def update_cwd(self, display_path: str) -> None:
-        pass   # cwd owned by ShellSession
+        pass
 
     def set_text(self, text: str) -> None:
         self._input.setPlainText(text)

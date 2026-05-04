@@ -1,6 +1,8 @@
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QScrollArea, QWidget
 from PySide6.QtCore import Signal, Qt
 
+from .theme import Palette, ThemeManager
+
 
 class CompletionPopup(QFrame):
     item_activated = Signal(str)
@@ -8,13 +10,14 @@ class CompletionPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.hide()
-        self.setStyleSheet(
-            "QFrame { background: #1e2235; border: 1px solid #313244; border-radius: 6px; }"
-        )
         self._items: list[str] = []
         self._selected = -1
         self._buttons: list[QPushButton] = []
         self._build_ui()
+
+        _tm = ThemeManager.instance()
+        self.apply_theme(_tm.current)
+        _tm.theme_changed.connect(self.apply_theme)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -36,8 +39,15 @@ class CompletionPopup(QFrame):
         self._scroll.setWidget(self._list)
         layout.addWidget(self._scroll)
 
+    def apply_theme(self, p: Palette) -> None:
+        self.setStyleSheet(
+            f"QFrame {{ background: {p.bg_overlay}; border: 1px solid {p.border}; border-radius: 6px; }}"
+        )
+        for i, btn in enumerate(self._buttons):
+            is_dir = self._items[i].endswith("/")
+            btn.setStyleSheet(self._btn_style(p, is_dir, active=(i == self._selected)))
+
     def update_items(self, items: list[tuple[str, bool]]) -> None:
-        """items: list of (completion_text, is_dir)"""
         for btn in self._buttons:
             self._list_layout.removeWidget(btn)
             btn.deleteLater()
@@ -45,11 +55,12 @@ class CompletionPopup(QFrame):
         self._items.clear()
         self._selected = -1
 
+        p = ThemeManager.instance().current
         for text, is_dir in items:
             self._items.append(text)
             btn = QPushButton(text)
             btn.setFixedHeight(26)
-            btn.setStyleSheet(self._btn_style(is_dir, active=False))
+            btn.setStyleSheet(self._btn_style(p, is_dir, active=False))
             btn.clicked.connect(lambda checked, t=text: self.item_activated.emit(t))
             self._list_layout.addWidget(btn)
             self._buttons.append(btn)
@@ -74,21 +85,22 @@ class CompletionPopup(QFrame):
         return None
 
     def _set_selected(self, index: int) -> None:
+        p = ThemeManager.instance().current
         if 0 <= self._selected < len(self._buttons):
             is_dir = self._items[self._selected].endswith("/")
-            self._buttons[self._selected].setStyleSheet(self._btn_style(is_dir, active=False))
+            self._buttons[self._selected].setStyleSheet(self._btn_style(p, is_dir, active=False))
         self._selected = index
         if 0 <= index < len(self._buttons):
             btn = self._buttons[index]
-            btn.setStyleSheet(self._btn_style(self._items[index].endswith("/"), active=True))
+            btn.setStyleSheet(self._btn_style(p, self._items[index].endswith("/"), active=True))
             self._scroll.ensureWidgetVisible(btn)
 
     @staticmethod
-    def _btn_style(is_dir: bool, active: bool) -> str:
-        color = "#89b4fa" if is_dir else "#cdd6f4"
-        bg = "#2a3f6e" if active else "transparent"
+    def _btn_style(p: Palette, is_dir: bool, active: bool) -> str:
+        color = p.blue if is_dir else p.fg
+        bg = p.bg_selected if active else "transparent"
         return (
             f"QPushButton {{ background: {bg}; color: {color}; border: none;"
             f" font-family: Monospace; font-size: 9pt; text-align: left; padding: 0 10px; }}"
-            f"QPushButton:hover {{ background: #252840; }}"
+            f"QPushButton:hover {{ background: {p.bg_hover2}; }}"
         )
