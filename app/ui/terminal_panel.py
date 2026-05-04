@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
@@ -199,7 +201,34 @@ class TerminalPanel(QWidget):
             return True
         if cmd in _INTERACTIVE_NO_ARGS and len(parts) == 1:
             return True
+        # If cmd is not a binary in PATH it may be a shell alias (e.g. dimonaserver → ssh).
+        # Resolve it so that SSH aliases get routed to the PTY overlay correctly.
+        env_path = (self._session.env or os.environ).get("PATH", "")
+        if not shutil.which(cmd, path=env_path):
+            resolved = self._resolve_alias(cmd)
+            if resolved in _ALWAYS_INTERACTIVE:
+                return True
+            if resolved in _INTERACTIVE_NO_ARGS and len(parts) == 1:
+                return True
         return False
+
+    def _resolve_alias(self, cmd: str) -> str:
+        """Return the first command name a bash alias expands to, or cmd itself."""
+        try:
+            out = subprocess.run(
+                ["bash", "-i", "-c", f"alias {cmd} 2>/dev/null"],
+                capture_output=True, text=True, timeout=1,
+                stdin=subprocess.DEVNULL, env=self._session.env,
+                preexec_fn=os.setsid,
+            ).stdout.strip()
+            # output: alias dimonaserver='ssh -i key.pem ubuntu@1.2.3.4'
+            if "=" in out:
+                val = out.split("=", 1)[1].strip().strip("'\"")
+                first = val.split()[0] if val else ""
+                return os.path.basename(first) if first else cmd
+        except Exception:
+            pass
+        return cmd
 
     def _on_command_finished(self, block: Block, block_widget: CommandBlock) -> None:
         if self._stream_timer:
