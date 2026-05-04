@@ -11,7 +11,7 @@ from .input_bar import InputBar
 from .pty_widget import PtyWidget
 from .search_bar import SearchBar
 from .theme import Palette, ThemeManager
-from ..core.command_executor import BaseExecutor
+from ..core.command_executor import BaseExecutor, CommandThread
 from ..core.shell_session import ShellSession
 from ..domain.command import Command
 from ..domain.block import Block
@@ -28,6 +28,19 @@ _ALWAYS_INTERACTIVE = frozenset({
     "claude", "codex", "aider",
     "mysql", "psql", "mongosh", "redis-cli",
     "sudo",
+})
+
+# Commands that launch long-running servers/watchers — get a Stop button
+_STREAMING_COMMANDS = frozenset({
+    "nodemon", "vite", "live-server", "webpack", "webpack-dev-server",
+    "ng", "ionic",
+    "flask", "uvicorn", "gunicorn", "fastapi",
+    "rails",
+    "cargo-watch",
+})
+
+_STREAMING_SUBCOMMANDS = frozenset({
+    "serve", "dev", "start", "watch", "runserver", "run",
 })
 
 # Commands that are interactive only when called with no arguments
@@ -54,10 +67,11 @@ class TerminalPanel(QWidget):
         self._session   = ShellSession()
         self._history   = HistoryService(repository)
 
-        self._match_blocks: list[CommandBlock] = []
-        self._match_index:  int = 0
-        self._pty_widget:   PtyWidget | None = None
-        self._active_cmd:   Command   | None = None
+        self._match_blocks:    list[CommandBlock] = []
+        self._match_index:     int = 0
+        self._pty_widget:      PtyWidget | None = None
+        self._active_cmd:      Command   | None = None
+        self._running_thread:  CommandThread | None = None
 
         self._build_ui()
         self._wire_completion()
@@ -160,11 +174,23 @@ class TerminalPanel(QWidget):
         elif self._is_interactive(text):
             self._start_pty_session(text, command)
         else:
-            block = self._executor.execute(command, cwd=self._session.cwd, env=self._session.env)
-            self._history.add(block)
-            self._add_block(block)
-            self._input_bar.update_history(self._history.commands())
-            self.cwd_changed.emit(self._session.cwd_display())
+            initial_block = Block(
+                command=command, stdout="", stderr="", exit_code=-1, cwd=self._session.cwd
+            )
+            block_widget = CommandBlock(initial_block)
+            block_widget.remove_requested.connect(self._remove_block)
+            self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, block_widget)
+
+            thread = CommandThread(command, self._session.cwd, self._session.env)
+            self._running_thread = thread
+            thread.output_received.connect(block_widget.append_output)
+            thread.finished.connect(lambda b, w=block_widget: self._on_command_finished(b, w))
+
+            if self._is_streaming(text):
+                block_widget.set_stoppable(thread.stop)
+
+            self._input_bar.set_running(True)
+            thread.start()
 
     # ── interactive / PTY session ─────────────────────────────────────────────
 
@@ -178,6 +204,33 @@ class TerminalPanel(QWidget):
         if cmd in _INTERACTIVE_NO_ARGS and len(parts) == 1:
             return True
         return False
+
+    def _is_streaming(self, text: str) -> bool:
+        parts = text.strip().split()
+        if not parts:
+            return False
+        cmd = os.path.basename(parts[0])
+        if cmd in _STREAMING_COMMANDS:
+            if len(parts) == 1:
+                return True
+            if parts[1] in _STREAMING_SUBCOMMANDS:
+                return True
+        if cmd in {"npm", "yarn", "pnpm", "bun"} and len(parts) >= 2:
+            sub = parts[1]
+            if sub in _STREAMING_SUBCOMMANDS:
+                return True
+            if sub == "run" and len(parts) >= 3 and parts[2] in _STREAMING_SUBCOMMANDS:
+                return True
+        return False
+
+    def _on_command_finished(self, block: Block, block_widget: CommandBlock) -> None:
+        self._running_thread = None
+        self._input_bar.set_running(False)
+        block_widget.finalize(block.exit_code)
+        self._history.add(block)
+        self._input_bar.update_history(self._history.commands())
+        self.cwd_changed.emit(self._session.cwd_display())
+        self._input_bar.focus()
 
     def _start_pty_session(self, text: str, command: Command) -> None:
         if self._pty_widget is not None:

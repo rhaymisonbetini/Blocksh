@@ -1,7 +1,9 @@
 import os
 import re
+import signal
 import subprocess
 from abc import ABC, abstractmethod
+from PySide6.QtCore import QThread, Signal
 from ..domain.command import Command
 from ..domain.block import Block
 
@@ -54,3 +56,62 @@ class SubprocessExecutor(BaseExecutor):
         except Exception as e:
             command.status = "error"
             return Block(command=command, stderr=str(e), exit_code=1, cwd=cwd or "")
+
+
+class CommandThread(QThread):
+    output_received = Signal(str)
+    finished        = Signal(object)  # Block
+
+    def __init__(self, command: Command, cwd: str, env: dict):
+        super().__init__()
+        self._command = command
+        self._cwd     = cwd
+        self._env     = env
+        self._proc    = None
+
+    def run(self) -> None:
+        self._command.status = "running"
+        collected = []
+        exit_code = 1
+        try:
+            self._proc = subprocess.Popen(
+                ["bash", "-i", "-c", self._command.text],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+                cwd=self._cwd,
+                env=self._env,
+                preexec_fn=os.setsid,
+            )
+            while True:
+                chunk = self._proc.stdout.read(512)
+                if not chunk:
+                    break
+                collected.append(chunk)
+                self.output_received.emit(chunk)
+            self._proc.wait()
+            exit_code = self._proc.returncode
+        except Exception as e:
+            err = str(e)
+            collected.append(err)
+            self.output_received.emit(err)
+        finally:
+            self._proc = None
+
+        self._command.status = "done" if exit_code == 0 else "error"
+        self.finished.emit(Block(
+            command=self._command,
+            stdout="".join(collected),
+            stderr="",
+            exit_code=exit_code,
+            cwd=self._cwd or "",
+        ))
+
+    def stop(self) -> None:
+        if self._proc is not None:
+            try:
+                os.killpg(os.getpgid(self._proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass

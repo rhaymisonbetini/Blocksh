@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics,
-    QSyntaxHighlighter, QTextCharFormat, QColor,
+    QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor,
 )
 from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
@@ -130,7 +130,11 @@ class CommandBlock(QWidget):
         self._cmd_lbl:    QLabel | None      = None
         self._ts_lbl:     QLabel | None      = None
         self._menu_btn:   QPushButton | None = None
+        self._footer:     QWidget | None     = None
+        self._stop_btn:   QPushButton | None = None
         self._footer_btns: list[QPushButton] = []
+        self._raw_output: str = ""
+        self._copy_out_added: bool = False
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -139,7 +143,7 @@ class CommandBlock(QWidget):
 
     @property
     def searchable_text(self) -> str:
-        output = self._block.stdout or self._block.stderr
+        output = self._raw_output or self._block.stdout or self._block.stderr
         return f"{self._block.command.text} {output}".lower()
 
     def set_search_highlight(self, active: bool) -> None:
@@ -323,9 +327,89 @@ class CommandBlock(QWidget):
 
         return out
 
+    def append_output(self, chunk: str) -> None:
+        if self._output_widget is None:
+            self._output_widget = self._build_output_empty()
+            card_layout = self._card.layout()
+            card_layout.insertWidget(card_layout.count() - 1, self._output_widget)
+            if self._expanded:
+                self._output_widget.setVisible(True)
+        self._raw_output += chunk
+        cursor = self._output_widget.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self._output_widget.setTextCursor(cursor)
+        self._output_widget.insertPlainText(chunk)
+        self._resize_output()
+
+    def finalize(self, exit_code: int) -> None:
+        self._block.exit_code = exit_code
+        status_color = "#2ecc71" if exit_code == 0 else "#e74c3c"
+        if self._toggle_btn:
+            self._toggle_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {status_color}; border: none;"
+                f" font-size: 9pt; padding: 0; }}"
+                f"QPushButton:hover {{ color: {status_color}; opacity: 0.7; }}"
+            )
+        if self._output_widget and self._raw_output:
+            cleaned = _clean_output(self._raw_output).rstrip()
+            self._output_widget.setPlainText(cleaned)
+            self._resize_output()
+            if self._footer and not self._copy_out_added:
+                self._copy_out_added = True
+                p = ThemeManager.instance().current
+                copy_out = self._make_button("Copy output", p)
+                copy_out.clicked.connect(
+                    lambda c=cleaned: QApplication.clipboard().setText(c)
+                )
+                self._footer.layout().addWidget(copy_out)
+                self._footer_btns.append(copy_out)
+        if self._stop_btn:
+            self._stop_btn.setVisible(False)
+
+    def set_stoppable(self, callback) -> None:
+        if self._footer is None:
+            return
+        p = ThemeManager.instance().current
+        self._stop_btn = QPushButton("■ Stop")
+        self._stop_btn.setFixedHeight(24)
+        self._stop_btn.setStyleSheet(
+            f"QPushButton {{ background: {p.red}; color: {p.bg}; border-radius: 4px;"
+            f" font-size: 8pt; padding: 0 12px; border: none; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
+        )
+        self._stop_btn.clicked.connect(callback)
+        self._footer.layout().addWidget(self._stop_btn)
+
+    def _build_output_empty(self) -> QPlainTextEdit:
+        p = ThemeManager.instance().current
+        font = QFont("Monospace", 9)
+        out = QPlainTextEdit()
+        out.setReadOnly(True)
+        out.setFont(font)
+        out.document().setDocumentMargin(4)
+        out.setStyleSheet(
+            f"QPlainTextEdit {{ background: transparent; border: none;"
+            f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
+        )
+        out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        line_h = QFontMetrics(font).lineSpacing()
+        out.setFixedHeight(line_h + 12)
+        return out
+
+    def _resize_output(self) -> None:
+        if self._output_widget is None:
+            return
+        font = self._output_widget.font()
+        line_h = QFontMetrics(font).lineSpacing()
+        line_count = self._output_widget.document().blockCount()
+        content_h = line_count * line_h + 12
+        self._output_widget.setFixedHeight(min(300, max(line_h + 12, content_h)))
+
     def _build_footer(self) -> QWidget:
         p = ThemeManager.instance().current
         footer = QWidget()
+        self._footer = footer
         footer.setStyleSheet("QWidget { background: transparent; }")
         layout = QHBoxLayout(footer)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -343,6 +427,7 @@ class CommandBlock(QWidget):
 
         output = self._block.stdout or self._block.stderr
         if output.strip():
+            self._copy_out_added = True
             copy_out = self._make_button("Copy output", p)
             copy_out.clicked.connect(
                 lambda: QApplication.clipboard().setText(output.rstrip())
