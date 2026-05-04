@@ -158,22 +158,9 @@ class CommandBlock(QWidget):
     def _build_ui(self):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
+        row.setSpacing(0)
 
-        row.addWidget(self._build_status_circle(), alignment=Qt.AlignTop | Qt.AlignHCenter)
         row.addWidget(self._build_card())
-
-    def _build_status_circle(self) -> QPushButton:
-        color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
-        btn = QPushButton("▶")
-        btn.setFixedSize(28, 28)
-        btn.setStyleSheet(
-            f"QPushButton {{ background: {color}; color: #0d0f1a; border: none;"
-            f" border-radius: 14px; font-size: 8pt; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {color}cc; }}"
-        )
-        btn.clicked.connect(self._toggle_output)
-        return btn
 
     def _build_card(self) -> QFrame:
         card = QFrame()
@@ -203,6 +190,17 @@ class CommandBlock(QWidget):
         layout = QHBoxLayout(header)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
+
+        status_color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
+        toggle_btn = QPushButton("▾")
+        toggle_btn.setFixedSize(16, 16)
+        toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {status_color}; border: none;"
+            f" font-size: 9pt; padding: 0; }}"
+            f"QPushButton:hover {{ color: {status_color}; }}"
+        )
+        toggle_btn.clicked.connect(self._toggle_output)
+        layout.addWidget(toggle_btn)
 
         cwd_text = _display_cwd(self._block.cwd)
         if cwd_text:
