@@ -335,10 +335,11 @@ class CommandBlock(QWidget):
             if self._expanded:
                 self._output_widget.setVisible(True)
         self._raw_output += chunk
+        cleaned = _ANSI_RE.sub('', chunk)
         cursor = self._output_widget.textCursor()
         cursor.movePosition(QTextCursor.End)
         self._output_widget.setTextCursor(cursor)
-        self._output_widget.insertPlainText(chunk)
+        self._output_widget.insertPlainText(cleaned)
         self._resize_output()
 
     def finalize(self, exit_code: int) -> None:
@@ -391,8 +392,8 @@ class CommandBlock(QWidget):
             f"QPlainTextEdit {{ background: transparent; border: none;"
             f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
         )
-        out.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        out.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         line_h = QFontMetrics(font).lineSpacing()
         out.setFixedHeight(line_h + 12)
         return out
@@ -404,7 +405,7 @@ class CommandBlock(QWidget):
         line_h = QFontMetrics(font).lineSpacing()
         line_count = self._output_widget.document().blockCount()
         content_h = line_count * line_h + 12
-        self._output_widget.setFixedHeight(min(300, max(line_h + 12, content_h)))
+        self._output_widget.setFixedHeight(max(line_h + 12, content_h))
 
     def _build_footer(self) -> QWidget:
         p = ThemeManager.instance().current
