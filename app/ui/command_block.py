@@ -102,6 +102,7 @@ class CommandBlock(QWidget):
         self._output_widget: QPlainTextEdit | None = None
         self._card: QFrame | None = None
         # themed header/footer widgets — stored so apply_theme can reach them
+        self._toggle_btn: QPushButton | None = None
         self._cwd_lbl:    QLabel | None      = None
         self._prompt_lbl: QLabel | None      = None
         self._cmd_lbl:    QLabel | None      = None
@@ -137,11 +138,15 @@ class CommandBlock(QWidget):
         if self._output_widget:
             self._expanded = False
             self._output_widget.setVisible(False)
+            if self._toggle_btn:
+                self._toggle_btn.setText("▸")
 
     def expand(self) -> None:
         if self._output_widget:
             self._expanded = True
             self._output_widget.setVisible(True)
+            if self._toggle_btn:
+                self._toggle_btn.setText("▾")
 
     def apply_theme(self, p: Palette) -> None:
         if self._card:
@@ -182,22 +187,9 @@ class CommandBlock(QWidget):
     def _build_ui(self):
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
+        row.setSpacing(0)
 
-        row.addWidget(self._build_status_circle(), alignment=Qt.AlignTop | Qt.AlignHCenter)
         row.addWidget(self._build_card())
-
-    def _build_status_circle(self) -> QPushButton:
-        color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
-        btn = QPushButton("▶")
-        btn.setFixedSize(28, 28)
-        btn.setStyleSheet(
-            f"QPushButton {{ background: {color}; color: #0d0f1a; border: none;"
-            f" border-radius: 14px; font-size: 8pt; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {color}cc; }}"
-        )
-        btn.clicked.connect(self._toggle_output)
-        return btn
 
     def _build_card(self) -> QFrame:
         p = ThemeManager.instance().current
@@ -229,6 +221,17 @@ class CommandBlock(QWidget):
         layout = QHBoxLayout(header)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
+
+        status_color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
+        self._toggle_btn = QPushButton("▾")
+        self._toggle_btn.setFixedSize(16, 16)
+        self._toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {status_color}; border: none;"
+            f" font-size: 9pt; padding: 0; }}"
+            f"QPushButton:hover {{ color: {status_color}; opacity: 0.7; }}"
+        )
+        self._toggle_btn.clicked.connect(self._toggle_output)
+        layout.addWidget(self._toggle_btn)
 
         cwd_text = _display_cwd(self._block.cwd)
         if cwd_text:
@@ -333,6 +336,8 @@ class CommandBlock(QWidget):
             return
         self._expanded = not self._expanded
         self._output_widget.setVisible(self._expanded)
+        if self._toggle_btn:
+            self._toggle_btn.setText("▾" if self._expanded else "▸")
 
     def _show_menu(self):
         p = ThemeManager.instance().current
