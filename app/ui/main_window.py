@@ -10,13 +10,20 @@ from .terminal_panel import TerminalPanel
 from .theme import Palette, ThemeManager
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
+from ..services.favorites_service import FavoritesService
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, executor: BaseExecutor, repository: HistoryRepository):
+    def __init__(
+        self,
+        executor: BaseExecutor,
+        repository: HistoryRepository,
+        favorites_service: FavoritesService,
+    ):
         super().__init__()
-        self._executor      = executor
-        self._repository    = repository
+        self._executor           = executor
+        self._repository         = repository
+        self._favorites_service  = favorites_service
         self._panels: list[TerminalPanel] = []
         self._active_index  = 0
 
@@ -40,6 +47,10 @@ class MainWindow(QMainWindow):
         self._sidebar.history_open_requested.connect(self._load_history)
         self._sidebar.command_selected.connect(self._on_history_command_selected)
         self._sidebar.theme_selected.connect(lambda name: ThemeManager.instance().set_theme(name))
+        self._sidebar.favorites_open_requested.connect(self._load_favorites)
+        self._sidebar.favorite_command_selected.connect(self._on_favorite_command_selected)
+        self._sidebar.favorite_rename_requested.connect(self._on_favorite_rename)
+        self._sidebar.favorite_delete_requested.connect(self._on_favorite_delete)
         root.addWidget(self._sidebar)
 
         self._v_sep = QFrame()
@@ -85,6 +96,7 @@ class MainWindow(QMainWindow):
     def _add_tab(self) -> None:
         panel = TerminalPanel(self._executor, self._repository)
         panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd_changed(cwd, p))
+        panel.favorite_requested.connect(self._on_favorite_requested)
         self._panels.append(panel)
         self._stack.addWidget(panel)
         self._tab_bar.add_tab(f"Terminal {len(self._panels)}")
@@ -165,3 +177,25 @@ class MainWindow(QMainWindow):
         if self._panels:
             self._panels[self._active_index].set_input_text(text)
             self._panels[self._active_index].focus_input()
+
+    # ── favorites ─────────────────────────────────────────────────────────────
+
+    def _on_favorite_requested(self, name: str, command_text: str, cwd: str) -> None:
+        self._favorites_service.add(name, command_text, cwd)
+
+    def _load_favorites(self) -> None:
+        favorites = self._favorites_service.all()
+        self._sidebar.show_favorites(favorites)
+
+    def _on_favorite_command_selected(self, text: str) -> None:
+        if self._panels:
+            self._panels[self._active_index].set_input_text(text)
+            self._panels[self._active_index].focus_input()
+
+    def _on_favorite_rename(self, fav_id: str, name: str) -> None:
+        self._favorites_service.rename(fav_id, name)
+        self._load_favorites()
+
+    def _on_favorite_delete(self, fav_id: str) -> None:
+        self._favorites_service.remove(fav_id)
+        self._load_favorites()

@@ -27,5 +27,13 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             cwd            TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (session_id) REFERENCES sessions(id)
         );
+
+        CREATE TABLE IF NOT EXISTS favorites (
+            id           TEXT PRIMARY KEY,
+            name         TEXT NOT NULL,
+            command_text TEXT NOT NULL,
+            cwd          TEXT NOT NULL DEFAULT '',
+            created_at   TEXT NOT NULL
+        );
     """)
     conn.commit()

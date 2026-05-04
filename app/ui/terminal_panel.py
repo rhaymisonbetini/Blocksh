@@ -48,7 +48,8 @@ class TerminalPanel(QWidget):
     the blocks scroll area, SearchBar, InputBar and CompletionPopup.
     """
 
-    cwd_changed = Signal(str)   # emits cwd_display after every command
+    cwd_changed        = Signal(str)          # emits cwd_display after every command
+    favorite_requested = Signal(str, str, str)  # name, command_text, cwd
 
     def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
         super().__init__(parent)
@@ -170,6 +171,7 @@ class TerminalPanel(QWidget):
             )
             block_widget = CommandBlock(initial_block)
             block_widget.remove_requested.connect(self._remove_block)
+            block_widget.favorite_requested.connect(self.favorite_requested)
             self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, block_widget)
 
             thread = CommandThread(command, self._session.cwd, self._session.env)
@@ -398,6 +400,7 @@ class TerminalPanel(QWidget):
     def _add_block(self, block: Block) -> None:
         widget = CommandBlock(block)
         widget.remove_requested.connect(self._remove_block)
+        widget.favorite_requested.connect(self.favorite_requested)
         self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, widget)
 
     def _remove_block(self, widget: QWidget) -> None:

@@ -5,6 +5,8 @@ from .ui.theme import Palette, ThemeManager
 from .core.command_executor import SubprocessExecutor
 from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
+from .infra.storage.favorites_repository import FavoritesRepository
+from .services.favorites_service import FavoritesService
 
 
 def _build_global_qss(p: Palette) -> str:
@@ -55,10 +57,12 @@ def main():
 
     conn = get_connection()
     initialize_schema(conn)
-    repository = HistoryRepository(conn)
-    executor = SubprocessExecutor()
+    repository         = HistoryRepository(conn)
+    favorites_repo     = FavoritesRepository(conn)
+    favorites_service  = FavoritesService(favorites_repo)
+    executor           = SubprocessExecutor()
 
-    window = MainWindow(executor, repository)
+    window = MainWindow(executor, repository, favorites_service)
     window.show()
 
     sys.exit(app.exec())
