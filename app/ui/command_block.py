@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout,
     QLabel, QPlainTextEdit, QPushButton,
-    QApplication, QMenu,
+    QApplication, QMenu, QInputDialog,
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics,
@@ -115,7 +115,8 @@ class _OutputHighlighter(QSyntaxHighlighter):
 
 
 class CommandBlock(QWidget):
-    remove_requested = Signal(object)
+    remove_requested   = Signal(object)
+    favorite_requested = Signal(str, str, str)  # name, command_text, cwd
 
     def __init__(self, block: Block, parent=None):
         super().__init__(parent)
@@ -462,8 +463,16 @@ class CommandBlock(QWidget):
             menu.addAction("Copy output",
                            lambda: QApplication.clipboard().setText(output.rstrip()))
         menu.addSeparator()
+        menu.addAction("Add to Favorites", self._add_to_favorites)
+        menu.addSeparator()
         menu.addAction("Remove block", lambda: self.remove_requested.emit(self))
         menu.exec(self.cursor().pos())
+
+    def _add_to_favorites(self) -> None:
+        default = self._block.command.text[:40]
+        name, ok = QInputDialog.getText(self, "Add to Favorites", "Name:", text=default)
+        if ok and name.strip():
+            self.favorite_requested.emit(name.strip(), self._block.command.text, self._block.cwd)
 
     @staticmethod
     def _make_button(text: str, p: Palette) -> QPushButton:

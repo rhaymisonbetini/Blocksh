@@ -3,11 +3,12 @@ import platform
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QStackedWidget,
-    QButtonGroup,
+    QButtonGroup, QInputDialog, QMenu,
 )
 from PySide6.QtCore import Qt, Signal
 
 from ..domain.block import Block
+from ..domain.favorite import Favorite
 from .theme import Palette, ThemeManager
 
 
@@ -84,9 +85,13 @@ class _NavButton(QPushButton):
 
 
 class Sidebar(QWidget):
-    command_selected       = Signal(str)
-    history_open_requested = Signal()
-    theme_selected         = Signal(str)
+    command_selected          = Signal(str)
+    history_open_requested    = Signal()
+    theme_selected            = Signal(str)
+    favorites_open_requested  = Signal()
+    favorite_command_selected = Signal(str)
+    favorite_rename_requested = Signal(str, str)  # id, new_name
+    favorite_delete_requested = Signal(str)        # id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -104,9 +109,10 @@ class Sidebar(QWidget):
         layout.setSpacing(0)
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_nav_page())
-        self._stack.addWidget(self._build_history_page())
-        self._stack.addWidget(self._build_themes_page())
+        self._stack.addWidget(self._build_nav_page())      # 0
+        self._stack.addWidget(self._build_history_page())  # 1
+        self._stack.addWidget(self._build_themes_page())   # 2
+        self._stack.addWidget(self._build_favorites_page()) # 3
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
@@ -133,6 +139,8 @@ class Sidebar(QWidget):
             self._nav_buttons.append(btn)
             if label == "History":
                 btn.clicked.connect(self._open_history)
+            elif label == "Favorites":
+                btn.clicked.connect(self._open_favorites)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -213,6 +221,35 @@ class Sidebar(QWidget):
 
         return page
 
+    def _build_favorites_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+
+        header = self._build_sub_header("Favorites", lambda: self._stack.setCurrentIndex(0))
+        layout.addWidget(header)
+
+        self._favs_sep = QFrame()
+        self._favs_sep.setFrameShape(QFrame.HLine)
+        layout.addWidget(self._favs_sep)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._favs_list = QWidget()
+        self._favs_list.setStyleSheet("QWidget { background: transparent; }")
+        self._favs_list_layout = QVBoxLayout(self._favs_list)
+        self._favs_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._favs_list_layout.setSpacing(2)
+
+        scroll.setWidget(self._favs_list)
+        layout.addWidget(scroll)
+
+        return page
+
     def _build_sub_header(self, title: str, back_fn) -> QWidget:
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
@@ -274,6 +311,7 @@ class Sidebar(QWidget):
         self._nav_sep.setStyleSheet(sep_style)
         self._hist_sep.setStyleSheet(sep_style)
         self._themes_sep.setStyleSheet(sep_style)
+        self._favs_sep.setStyleSheet(sep_style)
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
@@ -286,6 +324,10 @@ class Sidebar(QWidget):
     def _open_history(self) -> None:
         self._stack.setCurrentIndex(1)
         self.history_open_requested.emit()
+
+    def _open_favorites(self) -> None:
+        self._stack.setCurrentIndex(3)
+        self.favorites_open_requested.emit()
 
     def _open_themes(self) -> None:
         self._refresh_themes_list(ThemeManager.instance().current)
@@ -341,6 +383,82 @@ class Sidebar(QWidget):
             self._history_list_layout.addWidget(btn)
 
         self._history_list_layout.addStretch()
+
+    def show_favorites(self, favorites: list[Favorite]) -> None:
+        p = ThemeManager.instance().current
+        while self._favs_list_layout.count() > 0:
+            item = self._favs_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not favorites:
+            empty = QLabel("No favorites yet\nUse ⋮ on any command block")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setWordWrap(True)
+            empty.setStyleSheet(
+                f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
+            )
+            self._favs_list_layout.addWidget(empty)
+            self._favs_list_layout.addStretch()
+            return
+
+        for fav in favorites:
+            row = self._build_favorite_row(fav, p)
+            self._favs_list_layout.addWidget(row)
+
+        self._favs_list_layout.addStretch()
+
+    def _build_favorite_row(self, fav: Favorite, p: Palette) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        name_lbl = QLabel(fav.name)
+        name_lbl.setStyleSheet(
+            f"color: {p.fg}; font-size: 9pt; font-weight: bold; background: transparent;"
+        )
+        layout.addWidget(name_lbl)
+
+        cmd_btn = QPushButton(fav.command_text)
+        cmd_btn.setFixedHeight(22)
+        cmd_btn.setToolTip(fav.command_text)
+        cmd_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
+            f" font-family: Monospace; font-size: 8pt; text-align: left; padding: 0 4px; }}"
+            f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
+        )
+        cmd_btn.clicked.connect(
+            lambda checked, t=fav.command_text: self.favorite_command_selected.emit(t)
+        )
+        layout.addWidget(cmd_btn)
+
+        row.setContextMenuPolicy(Qt.CustomContextMenu)
+        row.customContextMenuRequested.connect(
+            lambda pos, f=fav: self._show_favorite_menu(f)
+        )
+
+        return row
+
+    def _show_favorite_menu(self, fav: Favorite) -> None:
+        p = ThemeManager.instance().current
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 6px; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
+        )
+
+        def _rename():
+            name, ok = QInputDialog.getText(self, "Rename Favorite", "New name:", text=fav.name)
+            if ok and name.strip():
+                self.favorite_rename_requested.emit(fav.id, name.strip())
+
+        menu.addAction("Rename", _rename)
+        menu.addAction("Delete", lambda: self.favorite_delete_requested.emit(fav.id))
+        menu.exec(self.cursor().pos())
 
     def update_cwd(self, display_path: str) -> None:
         self._cwd_label.setText(display_path)
