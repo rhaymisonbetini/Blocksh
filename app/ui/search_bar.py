@@ -25,7 +25,7 @@ class SearchBar(QWidget):
         icon.setStyleSheet("color: #6c7086; font-size: 13pt; background: transparent;")
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Buscar nos blocos...")
+        self._input.setPlaceholderText("Search blocks...")
         self._input.setStyleSheet(
             "QLineEdit { background: #1e2235; color: #cdd6f4; border: none;"
             " border-radius: 4px; padding: 4px 10px; font-size: 9pt; }"
@@ -34,7 +34,7 @@ class SearchBar(QWidget):
         self._input.textChanged.connect(self.search_changed)
         self._input.returnPressed.connect(self.navigate_next)
 
-        self._counter = QLabel("0 resultados")
+        self._counter = QLabel("0 results")
         self._counter.setStyleSheet("color: #45475a; font-size: 8pt; background: transparent;")
         self._counter.setMinimumWidth(80)
 
@@ -63,10 +63,10 @@ class SearchBar(QWidget):
 
     def update_count(self, count: int, current: int = 0) -> None:
         if count == 0:
-            self._counter.setText("Nenhum resultado")
+            self._counter.setText("No results")
             self._counter.setStyleSheet("color: #e74c3c; font-size: 8pt; background: transparent;")
         else:
-            self._counter.setText(f"{current + 1} de {count}")
+            self._counter.setText(f"{current + 1} of {count}")
             self._counter.setStyleSheet("color: #a6e3a1; font-size: 8pt; background: transparent;")
 
     def query(self) -> str:

@@ -334,6 +334,12 @@ class TerminalPanel(QWidget):
         if self._search_bar.isVisible():
             self._on_search(self._search_bar.query())
 
+    def toggle_collapse_all(self) -> None:
+        blocks = self._all_blocks()
+        any_expanded = any(b._expanded for b in blocks if b._output_widget)
+        for b in blocks:
+            b.collapse() if any_expanded else b.expand()
+
     def clear_blocks(self) -> None:
         while self._blocks_layout.count() > 1:
             item = self._blocks_layout.takeAt(0)

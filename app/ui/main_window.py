@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
         self._tab_bar.tab_close_requested.connect(self._close_tab)
         self._tab_bar.tab_switched.connect(self._switch_tab)
         self._tab_bar.search_requested.connect(self._toggle_search)
+        self._tab_bar.collapse_all_requested.connect(self._toggle_collapse_all)
         right_layout.addWidget(self._tab_bar)
 
         h_sep = QFrame()
@@ -119,6 +120,10 @@ class MainWindow(QMainWindow):
     def _toggle_search(self) -> None:
         if self._panels:
             self._panels[self._active_index].toggle_search()
+
+    def _toggle_collapse_all(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].toggle_collapse_all()
 
     def _clear_active(self) -> None:
         if self._panels:

@@ -27,15 +27,15 @@ def _username() -> str:
 
 _NAV_MAIN = [
     (">_", "Terminal",   True),
-    ("≡",  "Histórico",  False),
-    ("◇",  "Favoritos",  False),
-    ("⊞",  "Projetos",   False),
+    ("≡",  "History",    False),
+    ("◇",  "Favorites",  False),
+    ("⊞",  "Projects",   False),
 ]
 
 _NAV_FOOTER = [
-    ("⚙",  "Configs",    False),
-    ("◑",  "Temas",      False),
-    ("○",  "Sobre",      False),
+    ("⚙",  "Settings",  False),
+    ("◑",  "Themes",    False),
+    ("○",  "About",     False),
 ]
 
 
@@ -122,7 +122,7 @@ class Sidebar(QWidget):
         for icon, label, active in _NAV_MAIN:
             btn = _NavButton(icon, label, active)
             nav_group.addButton(btn)
-            if label == "Histórico":
+            if label == "History":
                 btn.clicked.connect(self._open_history)
             layout.addWidget(btn)
 
@@ -165,7 +165,7 @@ class Sidebar(QWidget):
         )
         back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
 
-        title_lbl = QLabel("Histórico")
+        title_lbl = QLabel("History")
         title_lbl.setStyleSheet(
             "color: #cdd6f4; font-size: 10pt; font-weight: bold; background: transparent;"
         )
