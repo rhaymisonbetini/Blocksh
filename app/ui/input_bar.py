@@ -257,5 +257,15 @@ class InputBar(QWidget):
         self._move_cursor_end()
         self._input.setFocus()
 
+    def set_running(self, running: bool) -> None:
+        if running:
+            self._run_btn.setText("● Running…")
+            self._run_btn.setEnabled(False)
+            self._input.setReadOnly(True)
+        else:
+            self._run_btn.setText("▶  Run")
+            self._run_btn.setEnabled(True)
+            self._input.setReadOnly(False)
+
     def focus(self):
         self._input.setFocus()
