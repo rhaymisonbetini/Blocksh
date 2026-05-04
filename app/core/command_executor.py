@@ -85,12 +85,9 @@ class CommandThread(QThread):
                 env=self._env,
                 preexec_fn=os.setsid,
             )
-            while True:
-                chunk = self._proc.stdout.read(512)
-                if not chunk:
-                    break
-                collected.append(chunk)
-                self.output_received.emit(chunk)
+            for line in self._proc.stdout:
+                collected.append(line)
+                self.output_received.emit(line)
             self._proc.wait()
             exit_code = self._proc.returncode
         except Exception as e:

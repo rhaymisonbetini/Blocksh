@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
 )
-from PySide6.QtCore import Signal, QPoint
+from PySide6.QtCore import Signal, QPoint, QTimer
 
 from .command_block import CommandBlock
 from .completion_popup import CompletionPopup
@@ -28,19 +28,6 @@ _ALWAYS_INTERACTIVE = frozenset({
     "claude", "codex", "aider",
     "mysql", "psql", "mongosh", "redis-cli",
     "sudo",
-})
-
-# Commands that launch long-running servers/watchers — get a Stop button
-_STREAMING_COMMANDS = frozenset({
-    "nodemon", "vite", "live-server", "webpack", "webpack-dev-server",
-    "ng", "ionic",
-    "flask", "uvicorn", "gunicorn", "fastapi",
-    "rails",
-    "cargo-watch",
-})
-
-_STREAMING_SUBCOMMANDS = frozenset({
-    "serve", "dev", "start", "watch", "runserver", "run",
 })
 
 # Commands that are interactive only when called with no arguments
@@ -72,6 +59,7 @@ class TerminalPanel(QWidget):
         self._pty_widget:      PtyWidget | None = None
         self._active_cmd:      Command   | None = None
         self._running_thread:  CommandThread | None = None
+        self._stream_timer:    QTimer | None = None
 
         self._build_ui()
         self._wire_completion()
@@ -152,6 +140,7 @@ class TerminalPanel(QWidget):
         self._input_bar.completion_down.connect(self._completion_popup.select_next)
         self._input_bar.completion_accepted.connect(self._accept_completion)
         self._input_bar.text_changed.connect(self._on_input_text_changed)
+        self._input_bar.ctrl_c_pressed.connect(self._on_ctrl_c)
 
     # ── command handling ──────────────────────────────────────────────────────
 
@@ -186,8 +175,15 @@ class TerminalPanel(QWidget):
             thread.output_received.connect(block_widget.append_output)
             thread.finished.connect(lambda b, w=block_widget: self._on_command_finished(b, w))
 
-            if self._is_streaming(text):
-                block_widget.set_stoppable(thread.stop)
+            # After 10s, if the process is still running it's a long-lived server/watcher
+            # — show the Stop button without needing any command-name lists.
+            self._stream_timer = QTimer(self)
+            self._stream_timer.setSingleShot(True)
+            self._stream_timer.setInterval(10_000)
+            self._stream_timer.timeout.connect(
+                lambda w=block_widget, t=thread: w.set_stoppable(t.stop) if t.isRunning() else None
+            )
+            self._stream_timer.start()
 
             self._input_bar.set_running(True)
             thread.start()
@@ -205,25 +201,10 @@ class TerminalPanel(QWidget):
             return True
         return False
 
-    def _is_streaming(self, text: str) -> bool:
-        parts = text.strip().split()
-        if not parts:
-            return False
-        cmd = os.path.basename(parts[0])
-        if cmd in _STREAMING_COMMANDS:
-            if len(parts) == 1:
-                return True
-            if parts[1] in _STREAMING_SUBCOMMANDS:
-                return True
-        if cmd in {"npm", "yarn", "pnpm", "bun"} and len(parts) >= 2:
-            sub = parts[1]
-            if sub in _STREAMING_SUBCOMMANDS:
-                return True
-            if sub == "run" and len(parts) >= 3 and parts[2] in _STREAMING_SUBCOMMANDS:
-                return True
-        return False
-
     def _on_command_finished(self, block: Block, block_widget: CommandBlock) -> None:
+        if self._stream_timer:
+            self._stream_timer.stop()
+            self._stream_timer = None
         self._running_thread = None
         self._input_bar.set_running(False)
         block_widget.finalize(block.exit_code)
@@ -231,6 +212,10 @@ class TerminalPanel(QWidget):
         self._input_bar.update_history(self._history.commands())
         self.cwd_changed.emit(self._session.cwd_display())
         self._input_bar.focus()
+
+    def _on_ctrl_c(self) -> None:
+        if self._running_thread is not None:
+            self._running_thread.stop()
 
     def _start_pty_session(self, text: str, command: Command) -> None:
         if self._pty_widget is not None:

@@ -29,6 +29,7 @@ class _HistoryInput(QPlainTextEdit):
     completion_down     = Signal()
     completion_accepted = Signal()
     command_submitted   = Signal()
+    ctrl_c_pressed      = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,6 +45,10 @@ class _HistoryInput(QPlainTextEdit):
     def keyPressEvent(self, event):
         key  = event.key()
         mods = event.modifiers()
+
+        if key == Qt.Key_C and mods & Qt.ControlModifier:
+            self.ctrl_c_pressed.emit()
+            return
 
         if key == Qt.Key_Tab:
             self.tab_pressed.emit()
@@ -176,6 +181,10 @@ class InputBar(QWidget):
             cb(self._input.toPlainText())
 
     # ── completion API ────────────────────────────────────────────────────────
+
+    @property
+    def ctrl_c_pressed(self):
+        return self._input.ctrl_c_pressed
 
     @property
     def tab_pressed(self):
