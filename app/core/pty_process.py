@@ -8,6 +8,13 @@ import subprocess
 from PySide6.QtCore import QThread, Signal
 
 
+def _pty_preexec() -> None:
+    os.setsid()
+    # Designate the PTY slave (fd 0) as the controlling terminal so that
+    # ssh, sudo, and programs that open /dev/tty work correctly.
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
 class PtyProcess(QThread):
     """Runs a command inside a PTY and streams its output via Qt signals."""
 
@@ -46,7 +53,7 @@ class PtyProcess(QThread):
             close_fds=True,
             cwd=self._cwd,
             env=self._env,
-            preexec_fn=os.setsid,
+            preexec_fn=_pty_preexec,
         )
         os.close(slave_fd)
         self.start()   # begins the reader thread
