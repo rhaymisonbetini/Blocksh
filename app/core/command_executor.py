@@ -86,6 +86,8 @@ class CommandThread(QThread):
                 preexec_fn=os.setsid,
             )
             for line in self._proc.stdout:
+                if _BASH_NOISE.match(line):
+                    continue
                 collected.append(line)
                 self.output_received.emit(line)
             self._proc.wait()

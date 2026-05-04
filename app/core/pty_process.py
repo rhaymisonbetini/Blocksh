@@ -46,7 +46,7 @@ class PtyProcess(QThread):
         self._set_winsize(slave_fd, self._rows, self._cols)
 
         self._proc = subprocess.Popen(
-            ["/bin/bash", "-c", self._cmd],
+            ["bash", "-i", "-c", self._cmd],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
