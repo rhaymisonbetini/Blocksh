@@ -19,6 +19,8 @@ class HistoryService:
         return self._session_id
 
     def add(self, block: Block) -> None:
+        if self._blocks and self._blocks[-1].command.text.strip() == block.command.text.strip():
+            return   # #37: skip consecutive duplicate commands
         self._blocks.append(block)
         self._repo.save_block(block, self._session_id)
 
