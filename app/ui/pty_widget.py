@@ -1,7 +1,7 @@
 import pyte
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
-from PySide6.QtWidgets import QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
 from .ansi_colors import _NAMED, _256_to_hex, _resolve_color
@@ -12,8 +12,11 @@ _DEFAULT_BG = "#0d0f1a"
 
 _COLOR_BG   = QColor(_DEFAULT_BG)
 _COLOR_FG   = QColor(_DEFAULT_FG)
-_COLOR_CUR  = QColor("#cdd6f4")   # cursor block background
-_COLOR_CURT = QColor(_DEFAULT_BG) # cursor block text
+_COLOR_CUR  = QColor("#cdd6f4")
+_COLOR_CURT = QColor(_DEFAULT_BG)
+
+# pyte encodes DEC private mode N as N*32; DECCKM = mode 1 → 32
+_DECCKM = 32
 
 # ── key mapping ───────────────────────────────────────────────────────────────
 
@@ -42,6 +45,16 @@ _KEY_MAP: dict[int, bytes] = {
     Qt.Key_F8:        b"\x1b[19~",
     Qt.Key_F9:        b"\x1b[20~",
     Qt.Key_F10:       b"\x1b[21~",
+    Qt.Key_F11:       b"\x1b[23~",
+    Qt.Key_F12:       b"\x1b[24~",
+}
+
+# SS3 sequences used when DECCKM (application cursor keys) is active
+_KEY_MAP_APP: dict[int, bytes] = {
+    Qt.Key_Up:    b"\x1bOA",
+    Qt.Key_Down:  b"\x1bOB",
+    Qt.Key_Right: b"\x1bOC",
+    Qt.Key_Left:  b"\x1bOD",
 }
 
 
@@ -53,8 +66,8 @@ class _PtyCanvas(QWidget):
     Direct QPainter renderer for a pyte screen buffer.
 
     Each character is drawn at exactly (col * char_w, row * char_h) —
-    fixed grid, no HTML, no layout engine, no scrollbar. This eliminates
-    the sub-pixel height variance that caused visual tremor with QTextEdit.
+    fixed grid, no HTML, no layout engine. This eliminates the sub-pixel
+    height variance that caused visual tremor with QTextEdit.
     """
 
     def __init__(self, font: QFont, char_w: int, char_h: int, parent=None):
@@ -169,6 +182,9 @@ class PtyWidget(QWidget):
         self._stream:  pyte.ByteStream | None = None
         self._render_pending = False
 
+        self._bracketed_paste = False
+        self._mouse_mode      = 0    # 0=off, 1000=X10, 1002=button, 1003=any
+
         self._font = QFont("Monospace", 10)
         fm = QFontMetrics(self._font)
         self._char_w = max(1, fm.horizontalAdvance("M"))
@@ -197,6 +213,7 @@ class PtyWidget(QWidget):
         self._scrollbar = QScrollBar(Qt.Vertical)
         self._scrollbar.setInvertedAppearance(True)  # 0 = bottom (live), max = top (oldest)
         self._scrollbar.setMinimum(0)
+        self._scrollbar.setSingleStep(1)
         self._scrollbar.hide()
         self._scrollbar.valueChanged.connect(self._on_scroll)
         row.addWidget(self._scrollbar)
@@ -247,6 +264,24 @@ class PtyWidget(QWidget):
     # ── data → render ─────────────────────────────────────────────────────────
 
     def _on_data(self, data: bytes) -> None:
+        # track bracketed paste mode
+        if b"\x1b[?2004h" in data:
+            self._bracketed_paste = True
+        elif b"\x1b[?2004l" in data:
+            self._bracketed_paste = False
+
+        # track mouse reporting mode
+        for seq, mode in (
+            (b"\x1b[?1003h", 1003),
+            (b"\x1b[?1002h", 1002),
+            (b"\x1b[?1000h", 1000),
+            (b"\x1b[?1000l", 0),
+        ):
+            if seq in data:
+                self._mouse_mode = mode
+                self._canvas.setMouseTracking(mode >= 1002)
+                break
+
         self._stream.feed(data)
         if not self._render_pending:
             self._render_pending = True
@@ -259,6 +294,7 @@ class PtyWidget(QWidget):
         H = len(self._screen.history.top)
         if H > 0:
             self._scrollbar.setMaximum(H)
+            self._scrollbar.setPageStep(self._screen.lines)
             self._scrollbar.show()
         else:
             self._scrollbar.hide()
@@ -275,6 +311,30 @@ class PtyWidget(QWidget):
             self._scrollbar.setValue(self._scrollbar.value() + delta)
         else:
             super().wheelEvent(event)
+
+    # ── mouse → PTY ───────────────────────────────────────────────────────────
+
+    def _send_mouse(self, btn: int, x: int, y: int) -> None:
+        col = max(1, min(223, x // self._char_w + 1))
+        row = max(1, min(223, y // self._char_h + 1))
+        self._process.write(b"\x1b[M" + bytes([32 + btn, 32 + col, 32 + row]))
+
+    def mousePressEvent(self, event) -> None:
+        if self._mouse_mode >= 1000 and self._process:
+            self.setFocus()
+            btn = {Qt.LeftButton: 0, Qt.MiddleButton: 1, Qt.RightButton: 2}.get(event.button(), 3)
+            self._send_mouse(btn, int(event.position().x()), int(event.position().y()))
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._mouse_mode >= 1000 and self._process:
+            self._send_mouse(3, int(event.position().x()), int(event.position().y()))
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._mouse_mode >= 1002 and self._process:
+            self._send_mouse(32, int(event.position().x()), int(event.position().y()))
+        super().mouseMoveEvent(event)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
 
@@ -297,18 +357,46 @@ class PtyWidget(QWidget):
                     self._scrollbar.setValue(self._scrollbar.value() - self._screen.lines)
                 return
 
-        # Any other key input returns to live view
+        # any keystroke while scrolled returns to live view
         if self._scrollbar.isVisible() and self._scrollbar.value() > 0:
             self._scrollbar.setValue(0)
+
+        # Ctrl+V — bracketed paste
+        if key == Qt.Key_V and mods & Qt.ControlModifier:
+            clip = QApplication.clipboard().text()
+            if clip:
+                if self._bracketed_paste:
+                    self._process.write(
+                        b"\x1b[200~" + clip.encode("utf-8", errors="replace") + b"\x1b[201~"
+                    )
+                else:
+                    self._process.write(clip.encode("utf-8", errors="replace"))
+            return
+
+        # DECCKM active — use SS3 sequences for arrow keys
+        if self._screen and _DECCKM in self._screen.mode:
+            if key in _KEY_MAP_APP:
+                self._process.write(_KEY_MAP_APP[key])
+                return
 
         if key in _KEY_MAP:
             self._process.write(_KEY_MAP[key])
             return
 
-        if mods & Qt.ControlModifier and text:
-            c = ord(text.lower())
-            if ord("a") <= c <= ord("z"):
-                self._process.write(bytes([c - ord("a") + 1]))
+        # Ctrl+key — use event.key() for reliable mapping (text() is unreliable under Ctrl)
+        if mods & Qt.ControlModifier:
+            k = event.key()
+            if Qt.Key_A <= k <= Qt.Key_Z:
+                self._process.write(bytes([k - Qt.Key_A + 1]))
+                return
+            if k == Qt.Key_At:
+                self._process.write(b"\x00")
+                return
+            if k == Qt.Key_BracketLeft:
+                self._process.write(b"\x1b")
+                return
+            if k == Qt.Key_Backslash:
+                self._process.write(b"\x1c")
                 return
 
         if text:
@@ -320,6 +408,12 @@ class PtyWidget(QWidget):
         self._canvas.apply_theme(p)
 
     def _on_process_finished(self, exit_code: int) -> None:
+        if self._stream and self._screen:
+            # force restore of main screen buffer if the app exited without ESC[?1049l
+            self._stream.feed(b"\x1b[?1049l")
+        self._render_pending = False
+        self._canvas.update()
+
         if self._screen:
             lines = [
                 "".join(
