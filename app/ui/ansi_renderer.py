@@ -2,7 +2,13 @@ import re
 from PySide6.QtGui import QTextCharFormat, QFont, QColor
 from .ansi_colors import _resolve_color
 
-_ESCAPE_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
+_ESCAPE_RE = re.compile(
+    r'\x1b(?:'
+    r'\][^\x07\x1b]*(?:\x07|\x1b\\)'   # OSC: ESC ] ... BEL or ST — consume silently
+    r'|\[[0-9;?]*[A-Za-z]'              # CSI: ESC [ params letter
+    r'|[^[]'                             # ESC + single non-[ char
+    r')'
+)
 
 _SGR_FG = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 _SGR_BRIGHT_FG = [
@@ -19,16 +25,32 @@ def _apply_sgr(params: list[int], fmt: QTextCharFormat) -> QTextCharFormat:
             fmt = QTextCharFormat()
         elif p == 1:
             fmt.setFontWeight(QFont.Bold)
+        elif p == 2:
+            fmt.setFontWeight(QFont.Light)       # dim
         elif p == 3:
             fmt.setFontItalic(True)
         elif p == 4:
             fmt.setFontUnderline(True)
+        elif p == 7:                              # reverse video — swap fg ↔ bg
+            fg = fmt.foreground().color()
+            bg = fmt.background().color()
+            if fg.isValid():
+                fmt.setBackground(fg)
+            if bg.isValid():
+                fmt.setForeground(bg)
+        elif p == 9:
+            fmt.setFontStrikeOut(True)
         elif p == 22:
             fmt.setFontWeight(QFont.Normal)
         elif p == 23:
             fmt.setFontItalic(False)
         elif p == 24:
             fmt.setFontUnderline(False)
+        elif p == 27:                             # no reverse — reset colors
+            fmt.clearForeground()
+            fmt.clearBackground()
+        elif p == 29:
+            fmt.setFontStrikeOut(False)
         elif 30 <= p <= 37:
             c = _resolve_color(_SGR_FG[p - 30])
             if c:

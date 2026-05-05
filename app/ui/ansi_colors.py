@@ -49,4 +49,6 @@ def _resolve_color(color: str) -> QColor | None:
     if "/" in color:
         r, g, b = color.split("/")
         return QColor(int(r), int(g), int(b))
+    if color.startswith("#") and len(color) in (4, 7):
+        return QColor(color)
     return None
