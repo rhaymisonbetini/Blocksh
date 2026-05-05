@@ -2,7 +2,7 @@ import random
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
 from PySide6.QtCore import Signal, Qt, QRect
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QFont, QFontMetrics, QTextCursor
 
 from .theme import Palette, ThemeManager
 
@@ -46,7 +46,9 @@ class _HistoryInput(QPlainTextEdit):
         key  = event.key()
         mods = event.modifiers()
 
+        # #33: Ctrl+C clears input text then signals the terminal
         if key == Qt.Key_C and mods & Qt.ControlModifier:
+            self.clear()
             self.ctrl_c_pressed.emit()
             return
 
@@ -57,6 +59,30 @@ class _HistoryInput(QPlainTextEdit):
         if key == Qt.Key_Escape:
             self.esc_pressed.emit()
             return
+
+        # #34: readline shortcuts
+        if mods & Qt.ControlModifier:
+            cursor = self.textCursor()
+            if key == Qt.Key_A:
+                cursor.movePosition(QTextCursor.StartOfLine)
+                self.setTextCursor(cursor)
+                return
+            if key == Qt.Key_E:
+                cursor.movePosition(QTextCursor.EndOfLine)
+                self.setTextCursor(cursor)
+                return
+            if key == Qt.Key_W:
+                cursor.movePosition(QTextCursor.PreviousWord, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+                return
+            if key == Qt.Key_K:
+                cursor.movePosition(QTextCursor.EndOfLine, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+                return
+            if key == Qt.Key_U:
+                cursor.movePosition(QTextCursor.StartOfLine, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+                return
 
         if self.popup_open:
             if key == Qt.Key_Up:
@@ -96,8 +122,14 @@ class InputBar(QWidget):
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
-        self.setFixedHeight(60)
         self._build_ui()
+
+        # #35: dynamic height — grow up to 5 lines as user types
+        font = QFont("Monospace", 10)
+        self._line_h  = QFontMetrics(font).lineSpacing()
+        self._v_margin = 20   # layout top (10) + bottom (10) margins
+        self._input.document().contentsChanged.connect(self._adjust_height)
+        self._adjust_height()
 
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
@@ -137,6 +169,14 @@ class InputBar(QWidget):
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
             f" font-family: Monospace; font-size: 10pt; }}"
         )
+
+    # ── dynamic height (#35) ──────────────────────────────────────────────────
+
+    def _adjust_height(self) -> None:
+        lines = max(1, self._input.document().blockCount())
+        new_h = min(5 * self._line_h + self._v_margin,
+                    lines * self._line_h + self._v_margin)
+        self.setFixedHeight(max(self._line_h + self._v_margin, new_h))
 
     # ── submission ────────────────────────────────────────────────────────────
 

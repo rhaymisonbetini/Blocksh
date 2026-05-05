@@ -391,6 +391,24 @@ class TerminalPanel(QWidget):
                     if entry.name.startswith(name_prefix):
                         is_dir = entry.is_dir()
                         matches.append((path_prefix + entry.name + ("/" if is_dir else ""), is_dir))
+
+            # #43: also complete executables from PATH when no path separator typed
+            if not path_prefix:
+                seen = {m[0] for m in matches}
+                env_path = os.environ.get("PATH", "")
+                for path_dir in env_path.split(os.pathsep):
+                    try:
+                        with os.scandir(path_dir) as bin_entries:
+                            for entry in bin_entries:
+                                if (entry.name.startswith(name_prefix)
+                                        and entry.name not in seen
+                                        and entry.is_file(follow_symlinks=True)
+                                        and os.access(entry.path, os.X_OK)):
+                                    matches.append((entry.name, False))
+                                    seen.add(entry.name)
+                    except (PermissionError, FileNotFoundError, OSError):
+                        continue
+
             return sorted(matches, key=lambda x: (not x[1], x[0].lower()))
         except (PermissionError, FileNotFoundError, OSError):
             return []
