@@ -1,7 +1,7 @@
 import pyte
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
-from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
 from .ansi_colors import _NAMED, _256_to_hex, _resolve_color
@@ -66,6 +66,7 @@ class _PtyCanvas(QWidget):
         self._char_h    = char_h
         self._ascent    = QFontMetrics(font).ascent()
         self._screen: pyte.Screen | None = None
+        self._scroll_offset: int = 0
 
         p = ThemeManager.instance().current
         self._color_bg        = QColor(p.pty_bg)
@@ -79,6 +80,10 @@ class _PtyCanvas(QWidget):
     def set_screen(self, screen: pyte.Screen) -> None:
         self._screen = screen
 
+    def set_scroll_offset(self, offset: int) -> None:
+        self._scroll_offset = offset
+        self.update()
+
     def apply_theme(self, p: Palette) -> None:
         self._color_bg        = QColor(p.pty_bg)
         self._color_fg        = QColor(p.pty_fg)
@@ -90,7 +95,16 @@ class _PtyCanvas(QWidget):
         if self._screen is None:
             return
 
-        buf        = self._screen.buffer
+        buf    = self._screen.buffer
+        offset = self._scroll_offset
+
+        if offset > 0:
+            hist_top     = list(self._screen.history.top)
+            H            = len(hist_top)
+            hist_portion = min(offset, H)
+        else:
+            hist_top = []; H = 0; hist_portion = 0
+
         cur_row    = self._screen.cursor.y
         cur_col    = self._screen.cursor.x
         cur_hidden = getattr(self._screen.cursor, "hidden", False)
@@ -101,8 +115,12 @@ class _PtyCanvas(QWidget):
         painter = QPainter(self)
 
         for y in range(self._screen.lines):
-            row = buf[y]
-            py  = y * ch
+            py = y * ch
+            if y < hist_portion:
+                row = hist_top[H - hist_portion + y]
+            else:
+                row = buf[y - hist_portion]
+
             for x in range(self._screen.columns):
                 cell = row[x]
                 data = cell.data or " "
@@ -113,7 +131,7 @@ class _PtyCanvas(QWidget):
                 if cell.reverse:
                     fg, bg = bg, fg
 
-                if not cur_hidden and y == cur_row and x == cur_col:
+                if offset == 0 and not cur_hidden and y == cur_row and x == cur_col:
                     fg, bg = self._color_cursor_fg, self._color_cursor_bg
 
                 px = x * cw
@@ -166,11 +184,24 @@ class PtyWidget(QWidget):
     # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
 
         self._canvas = _PtyCanvas(self._font, self._char_w, self._char_h)
-        layout.addWidget(self._canvas)
+        row.addWidget(self._canvas)
+
+        self._scrollbar = QScrollBar(Qt.Vertical)
+        self._scrollbar.setInvertedAppearance(True)  # 0 = bottom (live), max = top (oldest)
+        self._scrollbar.setMinimum(0)
+        self._scrollbar.hide()
+        self._scrollbar.valueChanged.connect(self._on_scroll)
+        row.addWidget(self._scrollbar)
+
+        outer.addLayout(row)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -194,7 +225,7 @@ class PtyWidget(QWidget):
 
     def _start_pty(self) -> None:
         rows, cols = self._calc_dimensions()
-        self._screen = pyte.Screen(cols, rows)
+        self._screen = pyte.HistoryScreen(cols, rows, history=2000)
         self._stream = pyte.ByteStream(self._screen)
         self._canvas.set_screen(self._screen)
 
@@ -223,8 +254,27 @@ class PtyWidget(QWidget):
 
     def _render(self) -> None:
         self._render_pending = False
-        if self._screen is not None:
-            self._canvas.update()   # schedules a single paintEvent, no HTML rebuild
+        if self._screen is None:
+            return
+        H = len(self._screen.history.top)
+        if H > 0:
+            self._scrollbar.setMaximum(H)
+            self._scrollbar.show()
+        else:
+            self._scrollbar.hide()
+        self._canvas.update()
+
+    # ── scroll ────────────────────────────────────────────────────────────────
+
+    def _on_scroll(self, value: int) -> None:
+        self._canvas.set_scroll_offset(value)
+
+    def wheelEvent(self, event) -> None:
+        if self._scrollbar.isVisible():
+            delta = -3 if event.angleDelta().y() > 0 else 3
+            self._scrollbar.setValue(self._scrollbar.value() + delta)
+        else:
+            super().wheelEvent(event)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
 
@@ -235,6 +285,21 @@ class PtyWidget(QWidget):
         key  = event.key()
         mods = event.modifiers()
         text = event.text()
+
+        # Shift+PgUp/PgDn for scrollback navigation
+        if mods & Qt.ShiftModifier:
+            if key == Qt.Key_PageUp:
+                if self._screen:
+                    self._scrollbar.setValue(self._scrollbar.value() + self._screen.lines)
+                return
+            if key == Qt.Key_PageDown:
+                if self._screen:
+                    self._scrollbar.setValue(self._scrollbar.value() - self._screen.lines)
+                return
+
+        # Any other key input returns to live view
+        if self._scrollbar.isVisible() and self._scrollbar.value() > 0:
+            self._scrollbar.setValue(0)
 
         if key in _KEY_MAP:
             self._process.write(_KEY_MAP[key])
