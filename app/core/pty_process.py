@@ -42,7 +42,7 @@ class PtyProcess(QThread):
 
         # pyte screen owned by PtyProcess; protected by _lock for cross-thread access
         self._lock   = QMutex()
-        self._screen = pyte.HistoryScreen(cols, rows, history=2000)
+        self._screen = pyte.HistoryScreen(cols, rows, history=2000, ratio=1.0)
         self._stream = pyte.ByteStream(self._screen)
 
     # ── public API ────────────────────────────────────────────────────────────
