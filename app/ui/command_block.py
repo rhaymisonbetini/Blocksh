@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor,
 )
 from .ansi_renderer import render_ansi
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
 
@@ -154,6 +154,7 @@ class CommandBlock(QWidget):
         self._footer_btns: list[QPushButton] = []
         self._raw_output: str = ""
         self._copy_out_added: bool = False
+        self._resize_pending: bool = False
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -348,9 +349,15 @@ class CommandBlock(QWidget):
                 is_stderr,
             )
 
-        line_h = QFontMetrics(font).lineSpacing()
-        content_h = out.document().blockCount() * line_h + 12
-        out.setFixedHeight(max(line_h + 12, content_h))
+        line_h    = QFontMetrics(font).lineSpacing()
+        line_count = out.document().blockCount()
+        content_h  = line_count * line_h + 12
+        max_h      = 200 * line_h + 12
+        capped     = content_h >= max_h
+        out.setFixedHeight(max(line_h + 12, min(max_h, content_h)))
+        out.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
+        )
 
         return out
 
@@ -376,6 +383,15 @@ class CommandBlock(QWidget):
                 cursor.removeSelectedText()
             _insert_ansi_text(cursor, part)
         self._output_widget.setTextCursor(cursor)
+        self._schedule_resize()
+
+    def _schedule_resize(self) -> None:
+        if not self._resize_pending:
+            self._resize_pending = True
+            QTimer.singleShot(100, self._do_resize)
+
+    def _do_resize(self) -> None:
+        self._resize_pending = False
         self._resize_output()
 
     def finalize(self, exit_code: int) -> None:
@@ -444,8 +460,14 @@ class CommandBlock(QWidget):
         font = self._output_widget.font()
         line_h = QFontMetrics(font).lineSpacing()
         line_count = self._output_widget.document().blockCount()
-        content_h = line_count * line_h + 12
-        self._output_widget.setFixedHeight(max(line_h + 12, content_h))
+        content_h  = line_count * line_h + 12
+        max_h      = 200 * line_h + 12
+        capped     = content_h >= max_h
+        new_h      = min(max_h, content_h)
+        self._output_widget.setFixedHeight(max(line_h + 12, new_h))
+        self._output_widget.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
+        )
 
     def _build_footer(self) -> QWidget:
         p = ThemeManager.instance().current

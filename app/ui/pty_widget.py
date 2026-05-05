@@ -1,5 +1,5 @@
 import pyte
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QMutex, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
 
@@ -66,8 +66,9 @@ class _PtyCanvas(QWidget):
     Direct QPainter renderer for a pyte screen buffer.
 
     Each character is drawn at exactly (col * char_w, row * char_h) —
-    fixed grid, no HTML, no layout engine. This eliminates the sub-pixel
-    height variance that caused visual tremor with QTextEdit.
+    fixed grid, no HTML, no layout engine. Acquires the process lock
+    before reading the screen buffer to prevent data races with pyte
+    feeding in the PTY thread.
     """
 
     def __init__(self, font: QFont, char_w: int, char_h: int, parent=None):
@@ -79,6 +80,7 @@ class _PtyCanvas(QWidget):
         self._char_h    = char_h
         self._ascent    = QFontMetrics(font).ascent()
         self._screen: pyte.Screen | None = None
+        self._lock:   QMutex | None = None
         self._scroll_offset: int = 0
 
         p = ThemeManager.instance().current
@@ -90,8 +92,9 @@ class _PtyCanvas(QWidget):
         self.setFocusPolicy(Qt.NoFocus)
         self.setAttribute(Qt.WA_OpaquePaintEvent)
 
-    def set_screen(self, screen: pyte.Screen) -> None:
+    def set_screen(self, screen: pyte.Screen, lock: QMutex) -> None:
         self._screen = screen
+        self._lock   = lock
 
     def set_scroll_offset(self, offset: int) -> None:
         self._scroll_offset = offset
@@ -108,53 +111,62 @@ class _PtyCanvas(QWidget):
         if self._screen is None:
             return
 
-        buf    = self._screen.buffer
-        offset = self._scroll_offset
+        # #38/#39: acquire lock to prevent races with PtyProcess.run() feeding pyte
+        if self._lock and not self._lock.tryLock(16):
+            # skip this paint cycle if PTY thread is busy; next screen_ready will re-trigger
+            return
 
-        if offset > 0:
-            hist_top     = list(self._screen.history.top)
-            H            = len(hist_top)
-            hist_portion = min(offset, H)
-        else:
-            hist_top = []; H = 0; hist_portion = 0
+        try:
+            buf    = self._screen.buffer
+            offset = self._scroll_offset
 
-        cur_row    = self._screen.cursor.y
-        cur_col    = self._screen.cursor.x
-        cur_hidden = getattr(self._screen.cursor, "hidden", False)
-
-        cw      = self._char_w
-        ch      = self._char_h
-        ascent  = self._ascent
-        painter = QPainter(self)
-
-        for y in range(self._screen.lines):
-            py = y * ch
-            if y < hist_portion:
-                row = hist_top[H - hist_portion + y]
+            if offset > 0:
+                hist_top     = list(self._screen.history.top)
+                H            = len(hist_top)
+                hist_portion = min(offset, H)
             else:
-                row = buf[y - hist_portion]
+                hist_top = []; H = 0; hist_portion = 0
 
-            for x in range(self._screen.columns):
-                cell = row[x]
-                data = cell.data or " "
+            cur_row    = self._screen.cursor.y
+            cur_col    = self._screen.cursor.x
+            cur_hidden = getattr(self._screen.cursor, "hidden", False)
 
-                fg: QColor = _resolve_color(cell.fg) or self._color_fg
-                bg: QColor = _resolve_color(cell.bg) or self._color_bg
+            cw      = self._char_w
+            ch      = self._char_h
+            ascent  = self._ascent
+            painter = QPainter(self)
 
-                if cell.reverse:
-                    fg, bg = bg, fg
+            for y in range(self._screen.lines):
+                py = y * ch
+                if y < hist_portion:
+                    row = hist_top[H - hist_portion + y]
+                else:
+                    row = buf[y - hist_portion]
 
-                if offset == 0 and not cur_hidden and y == cur_row and x == cur_col:
-                    fg, bg = self._color_cursor_fg, self._color_cursor_bg
+                for x in range(self._screen.columns):
+                    cell = row[x]
+                    data = cell.data or " "
 
-                px = x * cw
+                    fg: QColor = _resolve_color(cell.fg) or self._color_fg
+                    bg: QColor = _resolve_color(cell.bg) or self._color_bg
 
-                painter.fillRect(px, py, cw, ch, bg)
-                painter.setFont(self._font_bold if cell.bold else self._font)
-                painter.setPen(fg)
-                painter.drawText(px, py + ascent, data)
+                    if cell.reverse:
+                        fg, bg = bg, fg
 
-        painter.end()
+                    if offset == 0 and not cur_hidden and y == cur_row and x == cur_col:
+                        fg, bg = self._color_cursor_fg, self._color_cursor_bg
+
+                    px = x * cw
+
+                    painter.fillRect(px, py, cw, ch, bg)
+                    painter.setFont(self._font_bold if cell.bold else self._font)
+                    painter.setPen(fg)
+                    painter.drawText(px, py + ascent, data)
+
+            painter.end()
+        finally:
+            if self._lock:
+                self._lock.unlock()
 
 
 # ── widget ────────────────────────────────────────────────────────────────────
@@ -164,9 +176,8 @@ class PtyWidget(QWidget):
     """
     Full terminal emulator widget.
 
-    Runs *cmd* inside a PTY, parses VT100/ANSI escape sequences via pyte,
-    and renders the virtual screen via QPainter on a fixed character grid.
-    Forwards all keyboard input back to the PTY master.
+    Runs *cmd* inside a PTY via PtyProcess. pyte parsing happens in the PTY
+    thread; main thread only renders via QPainter on a fixed character grid.
     """
 
     session_finished = Signal(int, str)   # (exit_code, final_screen_text)
@@ -177,9 +188,7 @@ class PtyWidget(QWidget):
         self._cwd = cwd
         self._env = env
 
-        self._process: PtyProcess | None  = None
-        self._screen:  pyte.Screen | None = None
-        self._stream:  pyte.ByteStream | None = None
+        self._process: PtyProcess | None = None
         self._render_pending = False
 
         self._bracketed_paste = False
@@ -229,10 +238,9 @@ class PtyWidget(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._screen and self._process:
+        if self._process:
             rows, cols = self._calc_dimensions()
-            self._screen.resize(rows, cols)
-            self._process.resize(rows, cols)
+            self._process.resize(rows, cols)  # resize() now locks internally
 
     def closeEvent(self, event) -> None:
         self._kill_process()
@@ -242,12 +250,13 @@ class PtyWidget(QWidget):
 
     def _start_pty(self) -> None:
         rows, cols = self._calc_dimensions()
-        self._screen = pyte.HistoryScreen(cols, rows, history=2000)
-        self._stream = pyte.ByteStream(self._screen)
-        self._canvas.set_screen(self._screen)
 
         self._process = PtyProcess(self._cmd, self._cwd, self._env, rows, cols)
+        # canvas shares screen reference; lock protects concurrent reads during paintEvent
+        self._canvas.set_screen(self._process._screen, self._process._lock)
+
         self._process.data_ready.connect(self._on_data)
+        self._process.screen_ready.connect(self._on_screen_ready)
         self._process.process_finished.connect(self._on_process_finished)
         self._process.start_process()
 
@@ -264,6 +273,7 @@ class PtyWidget(QWidget):
     # ── data → render ─────────────────────────────────────────────────────────
 
     def _on_data(self, data: bytes) -> None:
+        """Raw bytes from PTY — used only for escape-sequence mode detection."""
         # track bracketed paste mode
         if b"\x1b[?2004h" in data:
             self._bracketed_paste = True
@@ -282,19 +292,21 @@ class PtyWidget(QWidget):
                 self._canvas.setMouseTracking(mode >= 1002)
                 break
 
-        self._stream.feed(data)
+    def _on_screen_ready(self, dirty: set) -> None:
+        """Called after PtyProcess has fed pyte in its thread; schedule repaint."""
         if not self._render_pending:
             self._render_pending = True
             QTimer.singleShot(33, self._render)
 
     def _render(self) -> None:
         self._render_pending = False
-        if self._screen is None:
+        if self._process is None:
             return
-        H = len(self._screen.history.top)
+        screen = self._process._screen
+        H = len(screen.history.top)
         if H > 0:
             self._scrollbar.setMaximum(H)
-            self._scrollbar.setPageStep(self._screen.lines)
+            self._scrollbar.setPageStep(screen.lines)
             self._scrollbar.show()
         else:
             self._scrollbar.hide()
@@ -348,13 +360,12 @@ class PtyWidget(QWidget):
 
         # Shift+PgUp/PgDn for scrollback navigation
         if mods & Qt.ShiftModifier:
+            screen = self._process._screen
             if key == Qt.Key_PageUp:
-                if self._screen:
-                    self._scrollbar.setValue(self._scrollbar.value() + self._screen.lines)
+                self._scrollbar.setValue(self._scrollbar.value() + screen.lines)
                 return
             if key == Qt.Key_PageDown:
-                if self._screen:
-                    self._scrollbar.setValue(self._scrollbar.value() - self._screen.lines)
+                self._scrollbar.setValue(self._scrollbar.value() - screen.lines)
                 return
 
         # any keystroke while scrolled returns to live view
@@ -374,7 +385,8 @@ class PtyWidget(QWidget):
             return
 
         # DECCKM active — use SS3 sequences for arrow keys
-        if self._screen and _DECCKM in self._screen.mode:
+        screen = self._process._screen
+        if _DECCKM in screen.mode:
             if key in _KEY_MAP_APP:
                 self._process.write(_KEY_MAP_APP[key])
                 return
@@ -408,19 +420,22 @@ class PtyWidget(QWidget):
         self._canvas.apply_theme(p)
 
     def _on_process_finished(self, exit_code: int) -> None:
-        if self._stream and self._screen:
+        screen = self._process._screen if self._process else None
+
+        if screen and self._process:
             # force restore of main screen buffer if the app exited without ESC[?1049l
-            self._stream.feed(b"\x1b[?1049l")
+            # PTY thread is done at this point so no lock needed
+            self._process._stream.feed(b"\x1b[?1049l")
         self._render_pending = False
         self._canvas.update()
 
-        if self._screen:
+        if screen:
             lines = [
                 "".join(
-                    self._screen.buffer[y][x].data or " "
-                    for x in range(self._screen.columns)
+                    screen.buffer[y][x].data or " "
+                    for x in range(screen.columns)
                 ).rstrip()
-                for y in range(self._screen.lines)
+                for y in range(screen.lines)
             ]
             final_text = "\n".join(lines).rstrip()
         else:
