@@ -10,6 +10,7 @@ from PySide6.QtGui import (
     QFont, QFontMetrics,
     QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor,
 )
+from .ansi_renderer import render_ansi
 from PySide6.QtCore import Signal, Qt
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
@@ -35,6 +36,23 @@ def _clean_output(text: str) -> str:
             line = ''.join(buf).rstrip()
         lines.append(line)
     return '\n'.join(lines)
+
+
+def _process_cr_ansi(text: str) -> str:
+    """Process \\r overwrites while preserving ANSI escape codes (for colored display)."""
+    lines = []
+    for line in text.split("\n"):
+        if "\r" not in line:
+            lines.append(line)
+            continue
+        parts = line.split("\r")
+        lines.append(parts[-1] if parts[-1] else (parts[-2] if len(parts) > 1 else ""))
+    return "\n".join(lines)
+
+
+def _insert_ansi_text(cursor: QTextCursor, text: str) -> None:
+    for segment, fmt in render_ansi(text):
+        cursor.insertText(segment, fmt)
 
 
 def _display_cwd(cwd: str) -> str:
@@ -306,7 +324,6 @@ class CommandBlock(QWidget):
         out.setReadOnly(True)
         out.setFont(font)
         out.document().setDocumentMargin(4)
-        out.setPlainText(_clean_output(text).rstrip())
         out.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none;"
             f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
@@ -314,13 +331,22 @@ class CommandBlock(QWidget):
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        is_stderr = bool(self._block.stderr) and not self._block.stdout
-        _OutputHighlighter(
-            out.document(),
-            self._block.command.text,
-            self._block.cwd,
-            is_stderr,
-        )
+        if _ANSI_RE.search(text):
+            # ANSI path: render with colors, skip QSyntaxHighlighter to avoid fmt override
+            display = _process_cr_ansi(text).rstrip()
+            cursor = out.textCursor()
+            _insert_ansi_text(cursor, display)
+            out.setTextCursor(cursor)
+        else:
+            # Plain text path: existing code with ls syntax highlighting
+            out.setPlainText(_clean_output(text).rstrip())
+            is_stderr = bool(self._block.stderr) and not self._block.stdout
+            _OutputHighlighter(
+                out.document(),
+                self._block.command.text,
+                self._block.cwd,
+                is_stderr,
+            )
 
         line_h = QFontMetrics(font).lineSpacing()
         content_h = out.document().blockCount() * line_h + 12
@@ -336,11 +362,10 @@ class CommandBlock(QWidget):
             if self._expanded:
                 self._output_widget.setVisible(True)
         self._raw_output += chunk
-        cleaned = _ANSI_RE.sub('', chunk)
         cursor = self._output_widget.textCursor()
         cursor.movePosition(QTextCursor.End)
+        _insert_ansi_text(cursor, chunk)
         self._output_widget.setTextCursor(cursor)
-        self._output_widget.insertPlainText(cleaned)
         self._resize_output()
 
     def finalize(self, exit_code: int) -> None:
@@ -353,15 +378,19 @@ class CommandBlock(QWidget):
                 f"QPushButton:hover {{ color: {status_color}; opacity: 0.7; }}"
             )
         if self._output_widget and self._raw_output:
-            cleaned = _clean_output(self._raw_output).rstrip()
-            self._output_widget.setPlainText(cleaned)
+            plain_text = _clean_output(self._raw_output).rstrip()  # for clipboard
+            display    = _process_cr_ansi(self._raw_output).rstrip()
+            self._output_widget.setPlainText("")
+            cursor = self._output_widget.textCursor()
+            _insert_ansi_text(cursor, display)
+            self._output_widget.setTextCursor(cursor)
             self._resize_output()
             if self._footer and not self._copy_out_added:
                 self._copy_out_added = True
                 p = ThemeManager.instance().current
                 copy_out = self._make_button("Copy output", p)
                 copy_out.clicked.connect(
-                    lambda c=cleaned: QApplication.clipboard().setText(c)
+                    lambda c=plain_text: QApplication.clipboard().setText(c)
                 )
                 self._footer.layout().addWidget(copy_out)
                 self._footer_btns.append(copy_out)
