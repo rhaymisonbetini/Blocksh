@@ -1,11 +1,12 @@
 import os
+import pyte
 import struct
 import fcntl
 import termios
 import signal
 import select
 import subprocess
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QMutex, QThread, Signal
 
 
 def _pty_preexec() -> None:
@@ -16,10 +17,11 @@ def _pty_preexec() -> None:
 
 
 class PtyProcess(QThread):
-    """Runs a command inside a PTY and streams its output via Qt signals."""
+    """Runs a command inside a PTY, feeds pyte off the main thread, and emits render signals."""
 
-    data_ready       = Signal(bytes)
-    process_finished = Signal(int)   # exit code
+    data_ready       = Signal(bytes)   # raw bytes — for escape-sequence detection in PtyWidget
+    screen_ready     = Signal(object)  # set of dirty row indices — triggers canvas repaint
+    process_finished = Signal(int)     # exit code
 
     def __init__(
         self,
@@ -37,6 +39,11 @@ class PtyProcess(QThread):
         self._cols      = cols
         self._master_fd = -1
         self._proc: subprocess.Popen | None = None
+
+        # pyte screen owned by PtyProcess; protected by _lock for cross-thread access
+        self._lock   = QMutex()
+        self._screen = pyte.HistoryScreen(cols, rows, history=2000)
+        self._stream = pyte.ByteStream(self._screen)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -67,16 +74,17 @@ class PtyProcess(QThread):
 
     def resize(self, rows: int, cols: int) -> None:
         self._rows, self._cols = rows, cols
+        self._lock.lock()
+        try:
+            self._screen.resize(rows, cols)
+        finally:
+            self._lock.unlock()
         if self._master_fd >= 0:
             try:
                 self._set_winsize(self._master_fd, rows, cols)
             except OSError:
                 pass
-        if self._proc and self._proc.pid:
-            try:
-                os.killpg(os.getpgid(self._proc.pid), signal.SIGWINCH)
-            except (OSError, ProcessLookupError):
-                pass
+        # TIOCSWINSZ already delivers SIGWINCH to the process — no manual kill needed
 
     def terminate(self) -> None:
         if self._proc and self._proc.pid:
@@ -92,9 +100,18 @@ class PtyProcess(QThread):
             try:
                 r, _, _ = select.select([self._master_fd], [], [], 0.05)
                 if r:
-                    data = os.read(self._master_fd, 4096)
+                    data = os.read(self._master_fd, 65536)
                     if data:
-                        self.data_ready.emit(data)
+                        # feed pyte off the main thread; protect screen with lock
+                        self._lock.lock()
+                        try:
+                            self._stream.feed(data)
+                            dirty = set(self._screen.dirty)
+                            self._screen.dirty.clear()
+                        finally:
+                            self._lock.unlock()
+                        self.data_ready.emit(data)       # raw bytes for mode detection
+                        self.screen_ready.emit(dirty)    # dirty rows for partial repaint
             except OSError:
                 break
 
