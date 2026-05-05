@@ -51,4 +51,7 @@ def _resolve_color(color: str) -> QColor | None:
         return QColor(int(r), int(g), int(b))
     if color.startswith("#") and len(color) in (4, 7):
         return QColor(color)
+    # pyte 0.8.x resolves truecolor and 256-color to a plain 6-digit hex string (no '#')
+    if len(color) == 6 and all(c in "0123456789abcdefABCDEF" for c in color):
+        return QColor(f"#{color}")
     return None

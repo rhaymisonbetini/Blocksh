@@ -257,7 +257,13 @@ class PtyWidget(QWidget):
     def _start_pty(self) -> None:
         rows, cols = self._calc_dimensions()
 
-        self._process = PtyProcess(self._cmd, self._cwd, self._env, rows, cols)
+        # Declare full color capabilities so TUI apps (claude, vim, htop…) use
+        # their rich rendering paths instead of falling back to dumb/monochrome.
+        env = dict(self._env)
+        env["TERM"]      = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+
+        self._process = PtyProcess(self._cmd, self._cwd, env, rows, cols)
         # canvas shares screen reference; lock protects concurrent reads during paintEvent
         self._canvas.set_screen(self._process._screen, self._process._lock)
 

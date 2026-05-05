@@ -91,9 +91,6 @@ class _HistoryInput(QPlainTextEdit):
             if key == Qt.Key_Down:
                 self.completion_down.emit()
                 return
-            if key in (Qt.Key_Return, Qt.Key_Enter):
-                self.completion_accepted.emit()
-                return
 
         if key in (Qt.Key_Return, Qt.Key_Enter):
             if mods & Qt.ShiftModifier:
@@ -176,7 +173,8 @@ class InputBar(QWidget):
         lines = max(1, self._input.document().blockCount())
         new_h = min(5 * self._line_h + self._v_margin,
                     lines * self._line_h + self._v_margin)
-        self.setFixedHeight(max(self._line_h + self._v_margin, new_h))
+        min_h = max(self._line_h + self._v_margin, 36 + self._v_margin)
+        self.setFixedHeight(max(min_h, new_h))
 
     # ── submission ────────────────────────────────────────────────────────────
 
