@@ -7,6 +7,18 @@ from PySide6.QtCore import QThread, Signal
 from ..domain.command import Command
 from ..domain.block import Block
 
+def _color_env(env: dict | None) -> dict:
+    base = env if env is not None else os.environ.copy()
+    return {
+        **base,
+        "TERM":           "xterm-256color",
+        "COLORTERM":      "truecolor",
+        "FORCE_COLOR":    "1",
+        "CLICOLOR_FORCE": "1",
+        "CLICOLOR":       "1",
+    }
+
+
 # Bash emits these to stderr when run with -i but without a real terminal.
 # Filter them so they don't pollute command output.
 _BASH_NOISE = re.compile(
@@ -41,7 +53,7 @@ class SubprocessExecutor(BaseExecutor):
                 text=True,
                 stdin=subprocess.DEVNULL,
                 cwd=cwd,
-                env=env,
+                env=_color_env(env),
                 preexec_fn=os.setsid,
             )
             command.status = "done" if result.returncode == 0 else "error"
@@ -82,7 +94,7 @@ class CommandThread(QThread):
                 text=True,
                 bufsize=1,
                 cwd=self._cwd,
-                env=self._env,
+                env=_color_env(self._env),
                 preexec_fn=os.setsid,
             )
             for line in self._proc.stdout:
