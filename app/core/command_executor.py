@@ -91,17 +91,21 @@ class CommandThread(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
+                text=False,    # raw bytes — avoids readline() blocking on partial lines
+                bufsize=0,
                 cwd=self._cwd,
                 env=_color_env(self._env),
                 preexec_fn=os.setsid,
             )
-            for line in self._proc.stdout:
-                if _BASH_NOISE.match(line):
+            while True:
+                chunk = self._proc.stdout.read(4096)
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                if _BASH_NOISE.match(text):
                     continue
-                collected.append(line)
-                self.output_received.emit(line)
+                collected.append(text)
+                self.output_received.emit(text)
             self._proc.wait()
             exit_code = self._proc.returncode
         except Exception as e:

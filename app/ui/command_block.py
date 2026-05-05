@@ -364,7 +364,17 @@ class CommandBlock(QWidget):
         self._raw_output += chunk
         cursor = self._output_widget.textCursor()
         cursor.movePosition(QTextCursor.End)
-        _insert_ansi_text(cursor, chunk)
+        # handle carriage returns: \r without \n overwrites the current line (progress bars)
+        first = True
+        for part in chunk.split("\r"):
+            if first:
+                first = False
+            else:
+                # \r — move to start of current block, clear to end, then write new content
+                cursor.movePosition(QTextCursor.StartOfBlock)
+                cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+            _insert_ansi_text(cursor, part)
         self._output_widget.setTextCursor(cursor)
         self._resize_output()
 
