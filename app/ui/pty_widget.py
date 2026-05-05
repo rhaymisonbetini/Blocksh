@@ -194,7 +194,11 @@ class PtyWidget(QWidget):
         self._bracketed_paste = False
         self._mouse_mode      = 0    # 0=off, 1000=X10, 1002=button, 1003=any
 
-        self._font = QFont("Monospace", 10)
+        # #42: prefer fonts with box-drawing character coverage
+        self._font = QFont()
+        self._font.setFamilies(["DejaVu Sans Mono", "Noto Mono", "Monospace"])
+        self._font.setStyleHint(QFont.Monospace)
+        self._font.setPointSize(10)
         fm = QFontMetrics(self._font)
         self._char_w = max(1, fm.horizontalAdvance("M"))
         self._char_h = max(1, fm.height())
@@ -234,7 +238,9 @@ class PtyWidget(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         if self._process is None:
-            self._start_pty()
+            # #45: defer by one event-loop cycle so Qt finishes layout before we calculate
+            # the initial terminal dimensions (avoids 10-col 5-row default)
+            QTimer.singleShot(0, self._start_pty)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
