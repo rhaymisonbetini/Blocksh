@@ -114,8 +114,8 @@ class TerminalPanel(QWidget):
         self._blocks_container = QWidget()
         self._blocks_container.setStyleSheet("QWidget { background: transparent; }")
         self._blocks_layout = QVBoxLayout(self._blocks_container)
-        self._blocks_layout.setContentsMargins(20, 16, 20, 16)
-        self._blocks_layout.setSpacing(12)
+        self._blocks_layout.setContentsMargins(16, 8, 16, 8)
+        self._blocks_layout.setSpacing(6)
         self._blocks_layout.addStretch()
 
         self._scroll.setWidget(self._blocks_container)
