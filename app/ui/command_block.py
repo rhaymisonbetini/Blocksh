@@ -11,12 +11,35 @@ from PySide6.QtGui import (
     QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor,
 )
 from .ansi_renderer import render_ansi
-from PySide6.QtCore import Signal, Qt, QTimer
+from PySide6.QtCore import Signal, Qt, QSize, QTimer
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
 
 # Matches ANSI/VT100 escape sequences: CSI (ESC[…), and other single-char ESC sequences
 _ANSI_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
+
+_QWIDGETSIZE_MAX = 16_777_215
+
+
+class _OutputEdit(QPlainTextEdit):
+    """QPlainTextEdit whose sizeHint reflects the height set via setFixedHeight.
+
+    QPlainTextEdit.sizeHint() returns a fixed ~192 px regardless of content.
+    When that large hint is used by the parent VBoxLayout to allocate space,
+    the card receives far more height than the output needs. The widget itself
+    can't fill it (setFixedHeight prevents growth), so the surplus shows up as
+    blank gaps above/between elements. Overriding sizeHint to report the actual
+    constrained height fixes the allocation.
+    """
+
+    def sizeHint(self) -> QSize:
+        max_h = self.maximumHeight()
+        if max_h < _QWIDGETSIZE_MAX:
+            return QSize(super().sizeHint().width(), max_h)
+        return super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
 
 
 def _clean_output(text: str) -> str:
@@ -178,12 +201,28 @@ class CommandBlock(QWidget):
                 f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
             )
 
+    def _sync_height(self) -> None:
+        """Pin card and CommandBlock to the exact pixel height their content needs.
+
+        QPlainTextEdit.sizeHint() returns ~192 px regardless of content. Even with
+        _OutputEdit overriding sizeHint, updateGeometry() propagation can be deferred,
+        so the first layout pass may still over-allocate. Calling setFixedHeight on
+        both the card and this widget after every size change removes the ambiguity:
+        the parent blocks_layout is forced to give exactly what is needed.
+        """
+        if self._card is None:
+            return
+        h = self._card.layout().sizeHint().height()
+        self._card.setFixedHeight(h)
+        self.setFixedHeight(h)
+
     def collapse(self) -> None:
         if self._output_widget:
             self._expanded = False
             self._output_widget.setVisible(False)
             if self._toggle_btn:
                 self._toggle_btn.setText("▸")
+            self._sync_height()
 
     def expand(self) -> None:
         if self._output_widget:
@@ -191,6 +230,7 @@ class CommandBlock(QWidget):
             self._output_widget.setVisible(True)
             if self._toggle_btn:
                 self._toggle_btn.setText("▾")
+            self._sync_height()
 
     def apply_theme(self, p: Palette) -> None:
         if self._card:
@@ -249,6 +289,7 @@ class CommandBlock(QWidget):
             layout.addWidget(self._output_widget)
 
         layout.addWidget(self._build_footer())
+        self._sync_height()
         return card
 
     def _build_header(self) -> QWidget:
@@ -309,10 +350,10 @@ class CommandBlock(QWidget):
 
         return header
 
-    def _build_output(self, text: str) -> QPlainTextEdit:
+    def _build_output(self, text: str) -> _OutputEdit:
         p = ThemeManager.instance().current
         font = QFont("Monospace", 9)
-        out = QPlainTextEdit()
+        out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
@@ -359,6 +400,7 @@ class CommandBlock(QWidget):
             card_layout.insertWidget(card_layout.count() - 1, self._output_widget)
             if self._expanded:
                 self._output_widget.setVisible(True)
+            self._sync_height()
         self._raw_output += chunk
         cursor = self._output_widget.textCursor()
         cursor.movePosition(QTextCursor.End)
@@ -405,11 +447,13 @@ class CommandBlock(QWidget):
             self._stop_btn.setVisible(False)
             if self._footer:
                 self._footer.setVisible(False)
+        self._sync_height()
 
     def set_stoppable(self, callback) -> None:
         if self._footer is None:
             return
         self._footer.setVisible(True)
+        self._sync_height()
         p = ThemeManager.instance().current
         self._stop_btn = QPushButton("■ Stop")
         self._stop_btn.setFixedHeight(24)
@@ -421,10 +465,10 @@ class CommandBlock(QWidget):
         self._stop_btn.clicked.connect(callback)
         self._footer.layout().addWidget(self._stop_btn)
 
-    def _build_output_empty(self) -> QPlainTextEdit:
+    def _build_output_empty(self) -> _OutputEdit:
         p = ThemeManager.instance().current
         font = QFont("Monospace", 9)
-        out = QPlainTextEdit()
+        out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
@@ -454,6 +498,7 @@ class CommandBlock(QWidget):
         self._output_widget.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
         )
+        self._sync_height()
 
     def _build_footer(self) -> QWidget:
         footer = QWidget()
