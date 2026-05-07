@@ -172,8 +172,6 @@ class CommandBlock(QWidget):
         self._cmd_lbl:    QLabel | None      = None
         self._ts_lbl:     QLabel | None      = None
         self._menu_btn:   QPushButton | None = None
-        self._footer:     QWidget | None     = None
-        self._stop_btn:   QPushButton | None = None
         self._raw_output: str = ""
         self._resize_pending: bool = False
         self._build_ui()
@@ -288,7 +286,6 @@ class CommandBlock(QWidget):
             self._output_widget = self._build_output(output)
             layout.addWidget(self._output_widget)
 
-        layout.addWidget(self._build_footer())
         self._sync_height()
         return card
 
@@ -397,7 +394,7 @@ class CommandBlock(QWidget):
         if self._output_widget is None:
             self._output_widget = self._build_output_empty()
             card_layout = self._card.layout()
-            card_layout.insertWidget(card_layout.count() - 1, self._output_widget)
+            card_layout.insertWidget(1, self._output_widget)
             if self._expanded:
                 self._output_widget.setVisible(True)
             self._sync_height()
@@ -443,27 +440,7 @@ class CommandBlock(QWidget):
             _insert_ansi_text(cursor, display)
             self._output_widget.setTextCursor(cursor)
             self._resize_output()
-        if self._stop_btn:
-            self._stop_btn.setVisible(False)
-            if self._footer:
-                self._footer.setVisible(False)
         self._sync_height()
-
-    def set_stoppable(self, callback) -> None:
-        if self._footer is None:
-            return
-        self._footer.setVisible(True)
-        self._sync_height()
-        p = ThemeManager.instance().current
-        self._stop_btn = QPushButton("■ Stop")
-        self._stop_btn.setFixedHeight(24)
-        self._stop_btn.setStyleSheet(
-            f"QPushButton {{ background: {p.red}; color: {p.bg}; border-radius: 4px;"
-            f" font-size: 8pt; padding: 0 12px; border: none; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
-        )
-        self._stop_btn.clicked.connect(callback)
-        self._footer.layout().addWidget(self._stop_btn)
 
     def _build_output_empty(self) -> _OutputEdit:
         p = ThemeManager.instance().current
@@ -499,16 +476,6 @@ class CommandBlock(QWidget):
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
         )
         self._sync_height()
-
-    def _build_footer(self) -> QWidget:
-        footer = QWidget()
-        self._footer = footer
-        footer.setStyleSheet("QWidget { background: transparent; }")
-        layout = QHBoxLayout(footer)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        footer.setVisible(False)   # shown only when Stop button is active
-        return footer
 
     def _toggle_output(self):
         if self._output_widget is None:

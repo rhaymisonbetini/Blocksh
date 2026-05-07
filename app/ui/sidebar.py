@@ -208,6 +208,7 @@ class Sidebar(QWidget):
 
         scroll.setWidget(self._history_list)
         layout.addWidget(scroll)
+        self._history_scroll = scroll
 
         return page
 
@@ -237,6 +238,7 @@ class Sidebar(QWidget):
 
         scroll.setWidget(self._themes_list)
         layout.addWidget(scroll)
+        self._themes_scroll = scroll
 
         return page
 
@@ -266,6 +268,7 @@ class Sidebar(QWidget):
 
         scroll.setWidget(self._favs_list)
         layout.addWidget(scroll)
+        self._favs_scroll = scroll
 
         return page
 
@@ -327,6 +330,7 @@ class Sidebar(QWidget):
 
         scroll.setWidget(self._projs_list)
         layout.addWidget(scroll)
+        self._projs_scroll = scroll
 
         self._expanded_projects: set[str] = set()
 
@@ -420,14 +424,27 @@ class Sidebar(QWidget):
         self._refresh_themes_list(ThemeManager.instance().current)
         self._stack.setCurrentIndex(2)
 
-    def _refresh_themes_list(self, p: Palette) -> None:
-        while self._themes_list_layout.count() > 0:
-            item = self._themes_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+    @staticmethod
+    def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:
+        w = QWidget()
+        w.setStyleSheet("QWidget { background: transparent; }")
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(spacing)
+        return w, lay
 
+    def _swap_scroll_widget(self, scroll: "QScrollArea", new_widget: "QWidget",
+                            row_h: int, n_rows: int) -> None:
+        """Force layout on new_widget while standalone, then swap it into scroll."""
+        vp_w = scroll.viewport().width()
+        new_widget.resize(vp_w if vp_w > 0 else 164, max(1, n_rows) * row_h)
+        scroll.setWidget(new_widget)   # Qt deletes the old content widget
+
+    def _refresh_themes_list(self, p: Palette) -> None:
+        all_themes = ThemeManager.instance().all_themes()
+        new_list, new_layout = self._make_list_widget(spacing=2)
         current_name = ThemeManager.instance().current.name
-        for theme in ThemeManager.instance().all_themes():
+        for theme in all_themes:
             is_active = theme.name == current_name
             prefix = "●" if is_active else "○"
             color = p.fg if is_active else p.fg_muted
@@ -439,9 +456,11 @@ class Sidebar(QWidget):
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
             )
             btn.clicked.connect(lambda checked, n=theme.name: self._on_theme_clicked(n))
-            self._themes_list_layout.addWidget(btn)
-
-        self._themes_list_layout.addStretch()
+            new_layout.addWidget(btn)
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._themes_scroll, new_list, 30, len(all_themes))
+        self._themes_list = new_list
+        self._themes_list_layout = new_layout
 
     def _on_theme_clicked(self, name: str) -> None:
         self.theme_selected.emit(name)
@@ -450,11 +469,7 @@ class Sidebar(QWidget):
 
     def show_history(self, blocks: list[Block]) -> None:
         p = ThemeManager.instance().current
-        while self._history_list_layout.count() > 0:
-            item = self._history_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
+        new_list, new_layout = self._make_list_widget(spacing=2)
         for block in reversed(blocks):
             cmd_text = block.command.text
             color = p.fg if block.exit_code == 0 else p.red
@@ -467,17 +482,15 @@ class Sidebar(QWidget):
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
             )
             btn.clicked.connect(lambda checked, t=cmd_text: self.command_selected.emit(t))
-            self._history_list_layout.addWidget(btn)
-
-        self._history_list_layout.addStretch()
+            new_layout.addWidget(btn)
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._history_scroll, new_list, 30, len(blocks))
+        self._history_list = new_list
+        self._history_list_layout = new_layout
 
     def show_favorites(self, favorites: list[Favorite]) -> None:
         p = ThemeManager.instance().current
-        while self._favs_list_layout.count() > 0:
-            item = self._favs_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
+        new_list, new_layout = self._make_list_widget(spacing=2)
         if not favorites:
             empty = QLabel("No favorites yet\nUse ⋮ on any command block")
             empty.setAlignment(Qt.AlignCenter)
@@ -485,15 +498,14 @@ class Sidebar(QWidget):
             empty.setStyleSheet(
                 f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
             )
-            self._favs_list_layout.addWidget(empty)
-            self._favs_list_layout.addStretch()
-            return
-
-        for fav in favorites:
-            row = self._build_favorite_row(fav, p)
-            self._favs_list_layout.addWidget(row)
-
-        self._favs_list_layout.addStretch()
+            new_layout.addWidget(empty)
+        else:
+            for fav in favorites:
+                new_layout.addWidget(self._build_favorite_row(fav, p))
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._favs_scroll, new_list, 56, len(favorites))
+        self._favs_list = new_list
+        self._favs_list_layout = new_layout
 
     def _build_favorite_row(self, fav: Favorite, p: Palette) -> QWidget:
         row = QWidget()
@@ -549,11 +561,7 @@ class Sidebar(QWidget):
 
     def show_projects(self, projects_with_history: list[tuple[Project, list[Block]]]) -> None:
         p = ThemeManager.instance().current
-        while self._projs_list_layout.count() > 0:
-            item = self._projs_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
+        new_list, new_layout = self._make_list_widget(spacing=4)
         if not projects_with_history:
             empty = QLabel("No projects yet\nNavigate to a project and run a command, or use + to add")
             empty.setAlignment(Qt.AlignCenter)
@@ -561,15 +569,14 @@ class Sidebar(QWidget):
             empty.setStyleSheet(
                 f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
             )
-            self._projs_list_layout.addWidget(empty)
-            self._projs_list_layout.addStretch()
-            return
-
-        for proj, history in projects_with_history:
-            row = self._build_project_row(proj, history, p)
-            self._projs_list_layout.addWidget(row)
-
-        self._projs_list_layout.addStretch()
+            new_layout.addWidget(empty)
+        else:
+            for proj, history in projects_with_history:
+                new_layout.addWidget(self._build_project_row(proj, history, p))
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._projs_scroll, new_list, 56, len(projects_with_history))
+        self._projs_list = new_list
+        self._projs_list_layout = new_layout
 
     def _build_project_row(
         self, proj: Project, history: list[Block], p: Palette

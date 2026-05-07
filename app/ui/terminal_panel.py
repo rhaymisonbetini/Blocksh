@@ -5,7 +5,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QFrame,
 )
-from PySide6.QtCore import Signal, QPoint, QTimer
+from PySide6.QtCore import Signal, QPoint, Qt
+from PySide6.QtGui import QShortcut, QKeySequence
 
 from .command_block import CommandBlock
 from .completion_popup import CompletionPopup
@@ -62,7 +63,6 @@ class TerminalPanel(QWidget):
         self._pty_widget:      PtyWidget | None = None
         self._active_cmd:      Command   | None = None
         self._running_thread:  CommandThread | None = None
-        self._stream_timer:    QTimer | None = None
 
         self._build_ui()
         self._wire_completion()
@@ -136,6 +136,13 @@ class TerminalPanel(QWidget):
         self._completion_popup = CompletionPopup(self)
         self._completion_popup.item_activated.connect(self._on_completion_activated)
 
+        # Global Ctrl+C shortcut — kills the running thread regardless of which child has focus.
+        # Enabled only during execution so normal Ctrl+C (clear input) still works when idle.
+        self._ctrl_c_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        self._ctrl_c_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        self._ctrl_c_shortcut.activated.connect(self._on_ctrl_c)
+        self._ctrl_c_shortcut.setEnabled(False)
+
     def _wire_completion(self):
         self._input_bar.tab_pressed.connect(self._on_tab_pressed)
         self._input_bar.esc_pressed.connect(self._close_completion)
@@ -179,17 +186,8 @@ class TerminalPanel(QWidget):
             thread.output_received.connect(block_widget.append_output)
             thread.finished.connect(lambda b, w=block_widget: self._on_command_finished(b, w))
 
-            # After 10s, if the process is still running it's a long-lived server/watcher
-            # — show the Stop button without needing any command-name lists.
-            self._stream_timer = QTimer(self)
-            self._stream_timer.setSingleShot(True)
-            self._stream_timer.setInterval(10_000)
-            self._stream_timer.timeout.connect(
-                lambda w=block_widget, t=thread: w.set_stoppable(t.stop) if t.isRunning() else None
-            )
-            self._stream_timer.start()
-
             self._input_bar.set_running(True)
+            self._ctrl_c_shortcut.setEnabled(True)
             thread.start()
 
     # ── interactive / PTY session ─────────────────────────────────────────────
@@ -233,10 +231,8 @@ class TerminalPanel(QWidget):
         return cmd
 
     def _on_command_finished(self, block: Block, block_widget: CommandBlock) -> None:
-        if self._stream_timer:
-            self._stream_timer.stop()
-            self._stream_timer = None
         self._running_thread = None
+        self._ctrl_c_shortcut.setEnabled(False)
         self._input_bar.set_running(False)
         block_widget.finalize(block.exit_code)
         self._history.add(block)

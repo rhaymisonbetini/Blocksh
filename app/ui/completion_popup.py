@@ -48,22 +48,36 @@ class CompletionPopup(QFrame):
             btn.setStyleSheet(self._btn_style(p, is_dir, active=(i == self._selected)))
 
     def update_items(self, items: list[tuple[str, bool]]) -> None:
-        for btn in self._buttons:
-            self._list_layout.removeWidget(btn)
-            btn.deleteLater()
-        self._buttons.clear()
-        self._items.clear()
-        self._selected = -1
+        # Build the new list as a standalone widget (no visible parent) so that
+        # resize() triggers an immediate layout pass — all buttons are positioned
+        # correctly before the widget is inserted into the scroll area.
+        new_list = QWidget()
+        new_list.setStyleSheet("QWidget { background: transparent; }")
+        new_layout = QVBoxLayout(new_list)
+        new_layout.setContentsMargins(0, 0, 0, 0)
+        new_layout.setSpacing(1)
 
         p = ThemeManager.instance().current
+        new_buttons: list[QPushButton] = []
+        new_items: list[str] = []
         for text, is_dir in items:
-            self._items.append(text)
+            new_items.append(text)
             btn = QPushButton(text)
             btn.setFixedHeight(26)
             btn.setStyleSheet(self._btn_style(p, is_dir, active=False))
             btn.clicked.connect(lambda checked, t=text: self.item_activated.emit(t))
-            self._list_layout.addWidget(btn)
-            self._buttons.append(btn)
+            new_layout.addWidget(btn)
+            new_buttons.append(btn)
+
+        vp_w = self._scroll.viewport().width()
+        new_list.resize(vp_w if vp_w > 0 else 200, max(1, len(items)) * 27)
+
+        self._scroll.setWidget(new_list)   # Qt deletes the old list widget
+        self._list = new_list
+        self._list_layout = new_layout
+        self._buttons = new_buttons
+        self._items = new_items
+        self._selected = -1
 
         row_h = 26
         self.setFixedHeight(min(200, len(items) * row_h + 8))
