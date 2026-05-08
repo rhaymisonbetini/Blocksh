@@ -677,7 +677,9 @@ class _TerminalSection(QWidget):
             lines = Path("/etc/shells").read_text().splitlines()
             shells = [
                 s.strip() for s in lines
-                if s.strip() and not s.startswith("#") and Path(s.strip()).exists()
+                if s.strip() and not s.startswith("#")
+                and Path(s.strip()).exists()
+                and os.access(s.strip(), os.X_OK)
             ]
             return shells or ["bash"]
         except Exception:

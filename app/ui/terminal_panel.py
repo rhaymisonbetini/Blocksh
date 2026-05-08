@@ -1,4 +1,5 @@
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -216,7 +217,7 @@ class TerminalPanel(QWidget):
         """Return the first command name a bash alias expands to, or cmd itself."""
         try:
             out = subprocess.run(
-                ["bash", "-i", "-c", f"alias {cmd} 2>/dev/null"],
+                ["bash", "-i", "-c", f"alias {shlex.quote(cmd)} 2>/dev/null"],
                 capture_output=True, text=True, timeout=1,
                 stdin=subprocess.DEVNULL, env=self._session.env,
                 preexec_fn=os.setsid,

@@ -35,6 +35,20 @@ mkdir -p "${INSTALL_DIR}" "${ICON_DIR}" "${DESKTOP_DIR}"
 
 info "Downloading Blocksh AppImage..."
 curl -fsSL --progress-bar -o "${APPIMAGE}" "${APPIMAGE_URL}"
+
+info "Verifying checksum..."
+CHECKSUM_FILE="$(mktemp)"
+curl -fsSL -o "${CHECKSUM_FILE}" "${RELEASE_URL}/Blocksh-x86_64.AppImage.sha256"
+EXPECTED=$(cat "${CHECKSUM_FILE}")
+ACTUAL=$(sha256sum "${APPIMAGE}" | awk '{print $1}')
+rm -f "${CHECKSUM_FILE}"
+if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+    echo -e "\033[0;31m[✗]\033[0m Checksum mismatch — aborting installation." >&2
+    rm -f "${APPIMAGE}"
+    exit 1
+fi
+success "Checksum verified."
+
 chmod +x "${APPIMAGE}"
 success "AppImage saved to ${APPIMAGE}"
 
