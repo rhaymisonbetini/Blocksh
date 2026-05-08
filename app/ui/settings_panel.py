@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QCheckBox, QColorDialog, QComboBox, QFontComboBox, QFrame,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt, Signal
@@ -146,8 +146,8 @@ class _ThemeCreatorSection(QWidget):
         self._preview_text_lbl = pv_lbl
         vbox.addWidget(self._preview_frame)
 
-        # color groups
-        for group_name, fields in _COLOR_GROUPS:
+        # color groups — two-column grid
+        for group_name, grp_fields in _COLOR_GROUPS:
             grp_lbl = QLabel(group_name)
             grp_lbl.setStyleSheet(
                 f"color: {p.fg_dim}; font-size: 8pt; font-weight: bold;"
@@ -157,24 +157,29 @@ class _ThemeCreatorSection(QWidget):
 
             grid = QWidget()
             grid.setStyleSheet("QWidget { background: transparent; border: none; }")
-            gl = QVBoxLayout(grid)
-            gl.setContentsMargins(0, 0, 0, 4)
-            gl.setSpacing(3)
+            gl = QGridLayout(grid)
+            gl.setContentsMargins(0, 0, 0, 6)
+            gl.setSpacing(4)
+            gl.setColumnStretch(0, 1)
+            gl.setColumnStretch(1, 1)
 
-            for field in fields:
-                row = QWidget()
-                row.setStyleSheet("QWidget { background: transparent; border: none; }")
-                rh = QHBoxLayout(row)
-                rh.setContentsMargins(0, 0, 0, 0)
-                rh.setSpacing(6)
+            for idx, field in enumerate(grp_fields):
+                col = idx % 2
+                row_n = idx // 2
+
+                cell = QWidget()
+                cell.setStyleSheet("QWidget { background: transparent; border: none; }")
+                ch = QHBoxLayout(cell)
+                ch.setContentsMargins(0, 0, 0, 0)
+                ch.setSpacing(6)
 
                 swatch = QPushButton()
-                swatch.setFixedSize(20, 20)
+                swatch.setFixedSize(22, 22)
                 color_val = self._working.get(field, "#888888")
                 swatch.setStyleSheet(
                     f"QPushButton {{ background: {color_val}; border: 1px solid {p.border};"
-                    f" border-radius: 3px; }}"
-                    f"QPushButton:hover {{ border: 1px solid {p.fg}; }}"
+                    f" border-radius: 4px; }}"
+                    f"QPushButton:hover {{ border: 2px solid {p.fg}; }}"
                 )
                 swatch.clicked.connect(lambda checked, f=field: self._pick_color(f))
                 self._swatch_btns[field] = swatch
@@ -185,9 +190,9 @@ class _ThemeCreatorSection(QWidget):
                     f" background: transparent; border: none;"
                 )
 
-                rh.addWidget(swatch)
-                rh.addWidget(flbl, 1)
-                gl.addWidget(row)
+                ch.addWidget(swatch)
+                ch.addWidget(flbl, 1)
+                gl.addWidget(cell, row_n, col)
 
             vbox.addWidget(grid)
 
@@ -667,28 +672,44 @@ class SettingsPanel(QWidget):
     def _build_ui(self) -> None:
         p = ThemeManager.instance().current
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(10)
+        outer.setContentsMargins(24, 20, 24, 24)
+        outer.setSpacing(0)
+
+        # Two-column grid: left col = Appearance + Terminal Behavior
+        #                  right col = Theme Creator + Data Management
+        cols = QHBoxLayout()
+        cols.setContentsMargins(0, 0, 0, 0)
+        cols.setSpacing(16)
+
+        left_col = QVBoxLayout()
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(16)
+
+        right_col = QVBoxLayout()
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(16)
 
         # ── Appearance ────────────────────────────────────────────────────────
         frame, layout = _section_frame("Appearance", p)
         self._appearance = _AppearanceSection(p)
         layout.addWidget(self._appearance)
-        outer.addWidget(frame)
+        left_col.addWidget(frame)
         self._sections.append(self._appearance)
 
         # ── Terminal Behavior ─────────────────────────────────────────────────
         frame2, layout2 = _section_frame("Terminal Behavior", p)
         self._terminal = _TerminalSection(p)
         layout2.addWidget(self._terminal)
-        outer.addWidget(frame2)
+        left_col.addWidget(frame2)
         self._sections.append(self._terminal)
+
+        left_col.addStretch()
 
         # ── Theme Creator ─────────────────────────────────────────────────────
         frame3, layout3 = _section_frame("Theme Creator", p)
         self._theme_creator = _ThemeCreatorSection(p)
         layout3.addWidget(self._theme_creator)
-        outer.addWidget(frame3)
+        right_col.addWidget(frame3)
         self._sections.append(self._theme_creator)
 
         # ── Data Management ───────────────────────────────────────────────────
@@ -698,10 +719,14 @@ class SettingsPanel(QWidget):
         )
         self._data_mgmt.data_cleared.connect(self.data_cleared)
         layout4.addWidget(self._data_mgmt)
-        outer.addWidget(frame4)
+        right_col.addWidget(frame4)
         self._sections.append(self._data_mgmt)
 
-        outer.addStretch()
+        right_col.addStretch()
+
+        cols.addLayout(left_col, 1)
+        cols.addLayout(right_col, 1)
+        outer.addLayout(cols)
 
         # store frame references for theme updates
         self._frames = [frame, frame2, frame3, frame4]

@@ -1,6 +1,5 @@
 import os
 import platform
-import sqlite3
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QStackedWidget,
@@ -11,11 +10,7 @@ from PySide6.QtCore import Qt, Signal
 from ..domain.block import Block
 from ..domain.favorite import Favorite
 from ..domain.project import Project
-from ..infra.storage.history_repository import HistoryRepository
-from ..infra.storage.favorites_repository import FavoritesRepository
-from ..infra.storage.project_repository import ProjectRepository
 from .theme import Palette, ThemeManager
-from .settings_panel import SettingsPanel
 
 _TYPE_COLORS: dict[str, str] = {
     "git":     "#89b4fa",
@@ -113,21 +108,10 @@ class Sidebar(QWidget):
     project_add_requested     = Signal()           # add current directory
     project_rename_requested  = Signal(str, str)   # id, new_name
     project_delete_requested  = Signal(str)        # id
-    data_cleared              = Signal()
+    settings_requested        = Signal()
 
-    def __init__(
-        self,
-        repository: HistoryRepository | None = None,
-        favorites_repo: FavoritesRepository | None = None,
-        project_repo: ProjectRepository | None = None,
-        conn: sqlite3.Connection | None = None,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._repository    = repository
-        self._favorites_repo = favorites_repo
-        self._project_repo  = project_repo
-        self._conn          = conn
         self.setFixedWidth(180)
         self._nav_buttons: list[_NavButton] = []
         self._build_ui()
@@ -147,7 +131,6 @@ class Sidebar(QWidget):
         self._stack.addWidget(self._build_themes_page())    # 2
         self._stack.addWidget(self._build_favorites_page()) # 3
         self._stack.addWidget(self._build_projects_page())  # 4
-        self._stack.addWidget(self._build_settings_page())  # 5
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
@@ -356,38 +339,6 @@ class Sidebar(QWidget):
 
         return page
 
-    def _build_settings_page(self) -> QWidget:
-        page = QWidget()
-        page.setStyleSheet("QWidget { background: transparent; }")
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 12, 8, 12)
-        layout.setSpacing(6)
-
-        header = self._build_sub_header("Settings", lambda: self._stack.setCurrentIndex(0))
-        layout.addWidget(header)
-
-        self._settings_sep = QFrame()
-        self._settings_sep.setFrameShape(QFrame.HLine)
-        layout.addWidget(self._settings_sep)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        self._settings_panel = SettingsPanel(
-            repository=self._repository,
-            favorites_repo=self._favorites_repo,
-            project_repo=self._project_repo,
-            conn=self._conn,
-        )
-        self._settings_panel.data_cleared.connect(self.data_cleared)
-
-        scroll.setWidget(self._settings_panel)
-        layout.addWidget(scroll)
-
-        return page
-
     def _build_sub_header(self, title: str, back_fn) -> QWidget:
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
@@ -451,7 +402,6 @@ class Sidebar(QWidget):
         self._themes_sep.setStyleSheet(sep_style)
         self._favs_sep.setStyleSheet(sep_style)
         self._projs_sep.setStyleSheet(sep_style)
-        self._settings_sep.setStyleSheet(sep_style)
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
@@ -478,7 +428,7 @@ class Sidebar(QWidget):
         self._stack.setCurrentIndex(2)
 
     def _open_settings(self) -> None:
-        self._stack.setCurrentIndex(5)
+        self.settings_requested.emit()
 
     @staticmethod
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:

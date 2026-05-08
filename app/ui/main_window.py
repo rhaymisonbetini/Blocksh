@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QFrame,
+    QStackedWidget, QFrame, QLabel, QPushButton, QScrollArea,
 )
 from PySide6.QtGui import QKeySequence, QShortcut
 
@@ -8,6 +8,7 @@ from .sidebar import Sidebar
 from .tab_bar import TabBar
 from .terminal_panel import TerminalPanel
 from .theme import Palette, ThemeManager
+from .settings_panel import SettingsPanel
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
 from ..services.favorites_service import FavoritesService
@@ -50,14 +51,8 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        conn = self._repository._conn if hasattr(self._repository, "_conn") else None
-        self._sidebar = Sidebar(
-            repository=self._repository,
-            favorites_repo=self._favorites_repo,
-            project_repo=self._project_repo,
-            conn=conn,
-        )
-        self._sidebar.data_cleared.connect(self._on_data_cleared)
+        self._sidebar = Sidebar()
+        self._sidebar.settings_requested.connect(self._open_settings)
         self._sidebar.history_open_requested.connect(self._load_history)
         self._sidebar.command_selected.connect(self._on_history_command_selected)
         self._sidebar.theme_selected.connect(lambda name: ThemeManager.instance().set_theme(name))
@@ -76,10 +71,14 @@ class MainWindow(QMainWindow):
         self._v_sep.setFrameShape(QFrame.VLine)
         root.addWidget(self._v_sep)
 
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
+        # ── right side: QStackedWidget with terminal view (0) + settings (1) ──
+        self._right_stack = QStackedWidget()
+
+        # Page 0 — terminal view
+        terminal_view = QWidget()
+        tv_layout = QVBoxLayout(terminal_view)
+        tv_layout.setContentsMargins(0, 0, 0, 0)
+        tv_layout.setSpacing(0)
 
         self._tab_bar = TabBar()
         self._tab_bar.tab_add_requested.connect(self._add_tab)
@@ -87,20 +86,86 @@ class MainWindow(QMainWindow):
         self._tab_bar.tab_switched.connect(self._switch_tab)
         self._tab_bar.search_requested.connect(self._toggle_search)
         self._tab_bar.collapse_all_requested.connect(self._toggle_collapse_all)
+        tv_layout.addWidget(self._tab_bar)
+
+        self._h_sep = QFrame()
+        self._h_sep.setFrameShape(QFrame.HLine)
+        tv_layout.addWidget(self._h_sep)
+
+        self._stack = QStackedWidget()
+        tv_layout.addWidget(self._stack)
+
+        self._right_stack.addWidget(terminal_view)   # index 0
+
+        # Page 1 — settings full-width view
+        self._right_stack.addWidget(self._build_settings_view())  # index 1
+
+        root.addWidget(self._right_stack, 1)
 
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
         _tm.theme_changed.connect(self.apply_theme)
-        right_layout.addWidget(self._tab_bar)
 
-        self._h_sep = QFrame()
-        self._h_sep.setFrameShape(QFrame.HLine)
-        right_layout.addWidget(self._h_sep)
+    def _build_settings_view(self) -> QWidget:
+        p = ThemeManager.instance().current
+        page = QWidget()
+        page.setStyleSheet(f"QWidget {{ background-color: {p.bg}; }}")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self._stack = QStackedWidget()
-        right_layout.addWidget(self._stack)
+        # header bar
+        header = QWidget()
+        header.setFixedHeight(48)
+        header.setStyleSheet(
+            f"QWidget {{ background-color: {p.bg_panel}; border-bottom: 1px solid {p.border}; }}"
+        )
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(16, 0, 16, 0)
+        h_layout.setSpacing(12)
 
-        root.addWidget(right)
+        back_btn = QPushButton("← Back")
+        back_btn.setFixedHeight(30)
+        back_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
+            f" font-size: 9pt; padding: 0 8px; }}"
+            f"QPushButton:hover {{ color: {p.fg}; }}"
+        )
+        back_btn.clicked.connect(self._close_settings)
+
+        title_lbl = QLabel("⚙  Settings")
+        title_lbl.setStyleSheet(
+            f"color: {p.fg}; font-size: 11pt; font-weight: bold; background: transparent;"
+        )
+
+        h_layout.addWidget(back_btn)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        layout.addWidget(header)
+
+        # settings content in a scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setHorizontalScrollBarPolicy(0)  # Qt.ScrollBarAlwaysOff
+
+        conn = self._repository._conn if hasattr(self._repository, "_conn") else None
+        self._settings_panel = SettingsPanel(
+            repository=self._repository,
+            favorites_repo=self._favorites_repo,
+            project_repo=self._project_repo,
+            conn=conn,
+        )
+        self._settings_panel.data_cleared.connect(self._on_data_cleared)
+
+        scroll.setWidget(self._settings_panel)
+        layout.addWidget(scroll, 1)
+
+        self._settings_header = header
+        self._settings_back_btn = back_btn
+        self._settings_title_lbl = title_lbl
+
+        return page
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+T"), self).activated.connect(self._add_tab)
@@ -109,6 +174,21 @@ class MainWindow(QMainWindow):
         )
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search)
         QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._clear_active)
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self._esc_settings)
+
+    # ── settings navigation ───────────────────────────────────────────────────
+
+    def _open_settings(self) -> None:
+        self._right_stack.setCurrentIndex(1)
+
+    def _close_settings(self) -> None:
+        self._right_stack.setCurrentIndex(0)
+        if self._panels:
+            self._panels[self._active_index].focus_input()
+
+    def _esc_settings(self) -> None:
+        if self._right_stack.currentIndex() == 1:
+            self._close_settings()
 
     # ── tab management ────────────────────────────────────────────────────────
 
@@ -149,7 +229,7 @@ class MainWindow(QMainWindow):
         self._sidebar.update_cwd(self._panels[index].cwd_display)
         self._update_title()
 
-    # ── active panel actions ──────────────────────────────────────────────────
+    # ── theme ─────────────────────────────────────────────────────────────────
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QMainWindow, QWidget {{ background-color: {p.bg}; color: {p.fg}; }}")
@@ -161,6 +241,21 @@ class MainWindow(QMainWindow):
             self._h_sep.setStyleSheet(
                 f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
             )
+        if hasattr(self, "_settings_header"):
+            self._settings_header.setStyleSheet(
+                f"QWidget {{ background-color: {p.bg_panel};"
+                f" border-bottom: 1px solid {p.border}; }}"
+            )
+            self._settings_back_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
+                f" font-size: 9pt; padding: 0 8px; }}"
+                f"QPushButton:hover {{ color: {p.fg}; }}"
+            )
+            self._settings_title_lbl.setStyleSheet(
+                f"color: {p.fg}; font-size: 11pt; font-weight: bold; background: transparent;"
+            )
+
+    # ── panel actions ─────────────────────────────────────────────────────────
 
     def _toggle_search(self) -> None:
         if self._panels:
@@ -180,7 +275,6 @@ class MainWindow(QMainWindow):
         if panel in self._panels and self._panels.index(panel) == self._active_index:
             self._sidebar.update_cwd(cwd)
             self._update_title()
-        # auto-register cwd as project if it has known markers
         if cwd:
             self._project_service.auto_register(cwd)
 
