@@ -1,8 +1,40 @@
 import os
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QRectF, QSize
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap
 
 from .theme import Palette, ThemeManager
+
+
+def _make_circular_pixmap(path: str, size: int, username: str) -> QPixmap:
+    result = QPixmap(size, size)
+    result.fill(Qt.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.Antialiasing)
+    clip = QPainterPath()
+    clip.addEllipse(QRectF(0, 0, size, size))
+    painter.setClipPath(clip)
+
+    src = QPixmap(path) if path else QPixmap()
+    if not src.isNull():
+        src = src.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        x = (src.width() - size) // 2
+        y = (src.height() - size) // 2
+        painter.drawPixmap(0, 0, src, x, y, size, size)
+    else:
+        painter.setBrush(QColor("#313244"))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QRectF(0, 0, size, size))
+        painter.setPen(QColor("#89b4fa"))
+        font = QFont()
+        font.setPixelSize(size // 2)
+        font.setBold(True)
+        painter.setFont(font)
+        initial = username[0].upper() if username else "U"
+        painter.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, initial)
+
+    painter.end()
+    return result
 
 
 def _username() -> str:
@@ -71,11 +103,12 @@ class _Tab(QWidget):
 
 
 class TabBar(QWidget):
-    tab_add_requested    = Signal()
-    tab_close_requested  = Signal(int)
-    tab_switched         = Signal(int)
-    search_requested     = Signal()
+    tab_add_requested      = Signal()
+    tab_close_requested    = Signal(int)
+    tab_switched           = Signal(int)
+    search_requested       = Signal()
     collapse_all_requested = Signal()
+    settings_requested     = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -86,6 +119,9 @@ class TabBar(QWidget):
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
         _tm.theme_changed.connect(self.apply_theme)
+
+        from ..services.settings_service import SettingsService
+        SettingsService.instance().settings_changed.connect(lambda _s: self._refresh_avatar())
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
@@ -117,16 +153,36 @@ class TabBar(QWidget):
 
         self._settings_btn = QPushButton("⚙")
         self._settings_btn.setFixedSize(28, 28)
+        self._settings_btn.clicked.connect(self.settings_requested.emit)
         layout.addWidget(self._settings_btn)
 
-        initials = _username()[:2].upper()
-        self._avatar_btn = QPushButton(initials)
+        self._avatar_btn = QPushButton()
         self._avatar_btn.setFixedSize(28, 28)
-        self._avatar_btn.setStyleSheet(
-            "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
-            " border-radius: 14px; font-weight: bold; font-size: 8pt; }"
-        )
+        self._avatar_btn.clicked.connect(self.settings_requested.emit)
         layout.addWidget(self._avatar_btn)
+        self._refresh_avatar()
+
+    def _refresh_avatar(self) -> None:
+        from ..services.settings_service import SettingsService
+        s = SettingsService.instance().get()
+        pix = _make_circular_pixmap(s.avatar_path, 26, _username())
+        if s.avatar_path:
+            self._avatar_btn.setIcon(QIcon(pix))
+            self._avatar_btn.setIconSize(QSize(26, 26))
+            self._avatar_btn.setText("")
+            self._avatar_btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none; border-radius: 14px; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.08); }"
+            )
+        else:
+            self._avatar_btn.setIcon(QIcon())
+            self._avatar_btn.setText(_username()[:2].upper())
+            p = ThemeManager.instance().current
+            self._avatar_btn.setStyleSheet(
+                f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
+                f" border-radius: 14px; font-weight: bold; font-size: 8pt; }}"
+                f"QPushButton:hover {{ background: {p.cyan}; }}"
+            )
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
@@ -143,6 +199,7 @@ class TabBar(QWidget):
         self._search_btn.setStyleSheet(icon_style)
         self._collapse_btn.setStyleSheet(icon_style)
         self._settings_btn.setStyleSheet(icon_style)
+        self._refresh_avatar()
         for tab in self._tabs:
             tab.apply_theme(p)
 

@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         self._tab_bar.tab_switched.connect(self._switch_tab)
         self._tab_bar.search_requested.connect(self._toggle_search)
         self._tab_bar.collapse_all_requested.connect(self._toggle_collapse_all)
+        self._tab_bar.settings_requested.connect(self._open_settings)
         tv_layout.addWidget(self._tab_bar)
 
         self._h_sep = QFrame()
