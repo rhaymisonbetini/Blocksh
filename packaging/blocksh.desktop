@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Blocksh
+GenericName=Terminal Emulator
+Comment=Block-based terminal emulator with full PTY support
+Exec=blocksh
+Icon=blocksh
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true
+Keywords=terminal;shell;pty;block;

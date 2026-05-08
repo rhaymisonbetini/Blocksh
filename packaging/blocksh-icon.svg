@@ -1,0 +1,41 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background with rounded corners -->
+  <rect width="256" height="256" rx="44" fill="#0d0f1a"/>
+
+  <!-- Inner border glow -->
+  <rect x="3" y="3" width="250" height="250" rx="42"
+        fill="none" stroke="#89b4fa" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- Top accent line -->
+  <line x1="44" y1="5" x2="212" y2="5"
+        stroke="#89b4fa" stroke-width="2" opacity="0.6"/>
+
+  <!-- Bottom accent line -->
+  <line x1="44" y1="251" x2="212" y2="251"
+        stroke="#94e2d5" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Cursor bar -->
+  <rect x="44" y="82" width="9" height="90"
+        fill="#89b4fa" opacity="0.95" filter="url(#glow)"/>
+
+  <!-- >_ symbol -->
+  <text
+    x="148" y="172"
+    font-family="'Courier New', Courier, monospace"
+    font-size="110"
+    font-weight="bold"
+    fill="#89b4fa"
+    text-anchor="middle"
+    filter="url(#glow)"
+  >_</text>
+</svg>
