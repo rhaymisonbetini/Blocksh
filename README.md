@@ -554,8 +554,6 @@ Activate via **Themes** in the sidebar — no restart required.
 
 ## Roadmap
 
-The full sprint backlog is tracked in [`ROADMAP.md`](ROADMAP.md).
-
 | Sprint | Focus | Status |
 |--------|-------|--------|
 | Sprint 1 | PTY Core — arrow keys, Ctrl mapping, alternate screen buffer, bracketed paste | ✅ Done |
