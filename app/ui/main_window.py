@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QStackedWidget, QFrame, QLabel, QPushButton, QScrollArea,
 )
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 
 from .sidebar import Sidebar
@@ -147,7 +148,7 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        scroll.setHorizontalScrollBarPolicy(0)  # Qt.ScrollBarAlwaysOff
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         conn = self._repository._conn if hasattr(self._repository, "_conn") else None
         self._settings_panel = SettingsPanel(
