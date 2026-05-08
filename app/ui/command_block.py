@@ -14,6 +14,7 @@ from .ansi_renderer import render_ansi
 from PySide6.QtCore import Signal, Qt, QSize, QTimer
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
+from ..services.settings_service import SettingsService
 
 # Matches ANSI/VT100 escape sequences: CSI (ESC[…), and other single-char ESC sequences
 _ANSI_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
@@ -349,16 +350,18 @@ class CommandBlock(QWidget):
 
     def _build_output(self, text: str) -> _OutputEdit:
         p = ThemeManager.instance().current
-        font = QFont("Monospace", 9)
+        _s = SettingsService.instance().get()
+        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 9)
         out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
         out.document().setDocumentMargin(0)
         out.setContentsMargins(0, 0, 0, 0)
+        fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none;"
-            f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
+            f" color: {fg_color}; selection-background-color: {p.bg_overlay}; }}"
         )
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -444,16 +447,18 @@ class CommandBlock(QWidget):
 
     def _build_output_empty(self) -> _OutputEdit:
         p = ThemeManager.instance().current
-        font = QFont("Monospace", 9)
+        _s = SettingsService.instance().get()
+        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 9)
         out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
         out.document().setDocumentMargin(0)
         out.setContentsMargins(0, 0, 0, 0)
+        fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none;"
-            f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
+            f" color: {fg_color}; selection-background-color: {p.bg_overlay}; }}"
         )
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

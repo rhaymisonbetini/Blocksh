@@ -30,6 +30,8 @@ class PtyProcess(QThread):
         env: dict,
         rows: int = 24,
         cols: int = 80,
+        shell: str = "bash",
+        scrollback: int = 2000,
     ):
         super().__init__()
         self._cmd       = cmd
@@ -37,12 +39,13 @@ class PtyProcess(QThread):
         self._env       = env
         self._rows      = rows
         self._cols      = cols
+        self._shell     = shell
         self._master_fd = -1
         self._proc: subprocess.Popen | None = None
 
         # pyte screen owned by PtyProcess; protected by _lock for cross-thread access
         self._lock   = QMutex()
-        self._screen = pyte.HistoryScreen(cols, rows, history=2000, ratio=1.0)
+        self._screen = pyte.HistoryScreen(cols, rows, history=scrollback, ratio=1.0)
         self._stream = pyte.ByteStream(self._screen)
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ class PtyProcess(QThread):
         self._set_winsize(slave_fd, self._rows, self._cols)
 
         self._proc = subprocess.Popen(
-            ["bash", "-i", "-c", self._cmd],
+            [self._shell, "-i", "-c", self._cmd],
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,

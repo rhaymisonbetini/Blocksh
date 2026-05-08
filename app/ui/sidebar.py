@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QFrame, QScrollArea, QStackedWidget,
     QButtonGroup, QInputDialog, QMenu,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEasingCurve, QPropertyAnimation
 
 from ..domain.block import Block
 from ..domain.favorite import Favorite
@@ -75,6 +75,20 @@ class _NavButton(QPushButton):
         layout.addWidget(self._text_lbl)
         layout.addStretch()
 
+    def set_collapsed(self, collapsed: bool) -> None:
+        self._text_lbl.setVisible(not collapsed)
+        lay = self.layout()
+        if collapsed:
+            lay.setContentsMargins(0, 0, 0, 0)
+            self._icon_lbl.setMinimumWidth(48)
+            self._icon_lbl.setAlignment(Qt.AlignCenter)
+            self.setToolTip(self._text_lbl.text())
+        else:
+            lay.setContentsMargins(12, 0, 12, 0)
+            self._icon_lbl.setMinimumWidth(0)
+            self._icon_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.setToolTip("")
+
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"""
             QPushButton {{
@@ -108,10 +122,13 @@ class Sidebar(QWidget):
     project_add_requested     = Signal()           # add current directory
     project_rename_requested  = Signal(str, str)   # id, new_name
     project_delete_requested  = Signal(str)        # id
+    settings_requested        = Signal()
+    terminal_requested        = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(180)
+        self._collapsed = False
         self._nav_buttons: list[_NavButton] = []
         self._build_ui()
 
@@ -125,27 +142,41 @@ class Sidebar(QWidget):
         layout.setSpacing(0)
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_nav_page())       # 0
-        self._stack.addWidget(self._build_history_page())  # 1
-        self._stack.addWidget(self._build_themes_page())   # 2
+        self._stack.addWidget(self._build_nav_page())        # 0
+        self._stack.addWidget(self._build_history_page())   # 1
+        self._stack.addWidget(self._build_themes_page())    # 2
         self._stack.addWidget(self._build_favorites_page()) # 3
-        self._stack.addWidget(self._build_projects_page()) # 4
+        self._stack.addWidget(self._build_projects_page())  # 4
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
         page = QWidget()
         page.setStyleSheet("QWidget { background: transparent; }")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 16, 8, 12)
+        layout.setContentsMargins(8, 10, 8, 12)
         layout.setSpacing(2)
 
+        # ── header: logo + collapse toggle ───────────────────────────────────
         self._logo = QLabel(">_ Blocksh")
         self._logo.setStyleSheet(
             "color: #cdd6f4; font-family: Monospace; font-size: 11pt;"
-            " font-weight: bold; padding: 4px 8px 20px 8px;"
+            " font-weight: bold; padding: 4px 8px 4px 8px;"
             " background: transparent;"
         )
         layout.addWidget(self._logo)
+
+        _cr = QWidget()
+        _cr.setStyleSheet("QWidget { background: transparent; }")
+        _crl = QHBoxLayout(_cr)
+        _crl.setContentsMargins(0, 0, 0, 12)
+        _crl.setSpacing(0)
+        _crl.addStretch(1)
+        self._collapse_btn = QPushButton("«")
+        self._collapse_btn.setFixedSize(22, 22)
+        self._collapse_btn.setToolTip("Collapse sidebar")
+        self._collapse_btn.clicked.connect(self._toggle_collapse)
+        _crl.addWidget(self._collapse_btn)
+        layout.addWidget(_cr)
 
         nav_group = QButtonGroup(page)
         nav_group.setExclusive(True)
@@ -154,7 +185,9 @@ class Sidebar(QWidget):
             btn = _NavButton(icon, label, active)
             nav_group.addButton(btn)
             self._nav_buttons.append(btn)
-            if label == "History":
+            if label == "Terminal":
+                btn.clicked.connect(self.terminal_requested.emit)
+            elif label == "History":
                 btn.clicked.connect(self._open_history)
             elif label == "Favorites":
                 btn.clicked.connect(self._open_favorites)
@@ -175,6 +208,8 @@ class Sidebar(QWidget):
             self._nav_buttons.append(btn)
             if label == "Themes":
                 btn.clicked.connect(self._open_themes)
+            elif label == "Settings":
+                btn.clicked.connect(self._open_settings)
             layout.addWidget(btn)
 
         layout.addSpacing(12)
@@ -391,8 +426,14 @@ class Sidebar(QWidget):
         self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
         self._logo.setStyleSheet(
             f"color: {p.fg}; font-family: Monospace; font-size: 11pt;"
-            f" font-weight: bold; padding: 4px 8px 20px 8px; background: transparent;"
+            f" font-weight: bold; padding: 4px 8px 4px 8px; background: transparent;"
         )
+        if hasattr(self, "_collapse_btn"):
+            self._collapse_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
+                f" border-radius: 4px; font-size: 11pt; }}"
+                f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
+            )
         sep_style = f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
         self._nav_sep.setStyleSheet(sep_style)
         self._hist_sep.setStyleSheet(sep_style)
@@ -408,21 +449,91 @@ class Sidebar(QWidget):
 
     # ── navigation ────────────────────────────────────────────────────────────
 
+    # ── collapse ──────────────────────────────────────────────────────────────
+
+    def _toggle_collapse(self) -> None:
+        self._set_collapsed(not self._collapsed)
+
+    def _set_collapsed(self, collapsed: bool) -> None:
+        self._collapsed = collapsed
+        target_w = 48 if collapsed else 180
+
+        for btn in self._nav_buttons:
+            btn.set_collapsed(collapsed)
+
+        if collapsed:
+            self._logo.setVisible(False)
+            self._os_lbl.setVisible(False)
+            self._user_lbl.setVisible(False)
+            self._cwd_label.setVisible(False)
+            if self._stack.currentIndex() != 0:
+                self._stack.setCurrentIndex(0)
+            self._collapse_btn.setText("»")
+            self._collapse_btn.setToolTip("Expand sidebar")
+
+        # animate width
+        self.setMinimumWidth(0)
+        self._anim = QPropertyAnimation(self, b"maximumWidth", self)
+        self._anim.setDuration(200)
+        self._anim.setStartValue(self.width())
+        self._anim.setEndValue(target_w)
+        self._anim.setEasingCurve(QEasingCurve.InOutCubic)
+
+        if not collapsed:
+            def _on_done():
+                self.setFixedWidth(target_w)
+                self._logo.setVisible(True)
+                self._os_lbl.setVisible(True)
+                self._user_lbl.setVisible(True)
+                self._cwd_label.setVisible(True)
+                self._collapse_btn.setText("«")
+                self._collapse_btn.setToolTip("Collapse sidebar")
+            self._anim.finished.connect(_on_done)
+        else:
+            self._anim.finished.connect(lambda: self.setFixedWidth(target_w))
+
+        self._anim.start()
+
+    # ── navigation ────────────────────────────────────────────────────────────
+
     def _open_history(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(1))
+            self.history_open_requested.emit()
+            return
         self._stack.setCurrentIndex(1)
         self.history_open_requested.emit()
 
     def _open_favorites(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(3))
+            self.favorites_open_requested.emit()
+            return
         self._stack.setCurrentIndex(3)
         self.favorites_open_requested.emit()
 
     def _open_projects(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(4))
+            self.projects_open_requested.emit()
+            return
         self._stack.setCurrentIndex(4)
         self.projects_open_requested.emit()
 
     def _open_themes(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._refresh_themes_list(ThemeManager.instance().current)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(2))
+            return
         self._refresh_themes_list(ThemeManager.instance().current)
         self._stack.setCurrentIndex(2)
+
+    def _open_settings(self) -> None:
+        self.settings_requested.emit()
 
     @staticmethod
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:

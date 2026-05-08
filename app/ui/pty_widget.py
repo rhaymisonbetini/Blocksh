@@ -4,6 +4,8 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
+from ..services.settings_service import SettingsService
+from ..domain.settings import AppSettings
 from .ansi_colors import _NAMED, _256_to_hex, _resolve_color
 from .theme import Palette, ThemeManager
 
@@ -153,15 +155,35 @@ class _PtyCanvas(QWidget):
                     if cell.reverse:
                         fg, bg = bg, fg
 
-                    if offset == 0 and not cur_hidden and y == cur_row and x == cur_col:
-                        fg, bg = self._color_cursor_fg, self._color_cursor_bg
+                    is_cursor = (offset == 0 and not cur_hidden
+                                 and y == cur_row and x == cur_col)
 
                     px = x * cw
 
-                    painter.fillRect(px, py, cw, ch, bg)
-                    painter.setFont(self._font_bold if cell.bold else self._font)
-                    painter.setPen(fg)
-                    painter.drawText(px, py + ascent, data)
+                    if is_cursor:
+                        cursor_style = SettingsService.instance().get().cursor_style
+                        if cursor_style == "underline":
+                            painter.fillRect(px, py, cw, ch, bg)
+                            painter.setFont(self._font_bold if cell.bold else self._font)
+                            painter.setPen(fg)
+                            painter.drawText(px, py + ascent, data)
+                            painter.fillRect(px, py + ch - 2, cw, 2, self._color_cursor_bg)
+                        elif cursor_style == "beam":
+                            painter.fillRect(px, py, cw, ch, bg)
+                            painter.setFont(self._font_bold if cell.bold else self._font)
+                            painter.setPen(fg)
+                            painter.drawText(px, py + ascent, data)
+                            painter.fillRect(px, py, 2, ch, self._color_cursor_bg)
+                        else:  # block (default)
+                            painter.fillRect(px, py, cw, ch, self._color_cursor_bg)
+                            painter.setFont(self._font_bold if cell.bold else self._font)
+                            painter.setPen(self._color_cursor_fg)
+                            painter.drawText(px, py + ascent, data)
+                    else:
+                        painter.fillRect(px, py, cw, ch, bg)
+                        painter.setFont(self._font_bold if cell.bold else self._font)
+                        painter.setPen(fg)
+                        painter.drawText(px, py + ascent, data)
 
             painter.end()
         finally:
@@ -194,11 +216,12 @@ class PtyWidget(QWidget):
         self._bracketed_paste = False
         self._mouse_mode      = 0    # 0=off, 1000=X10, 1002=button, 1003=any
 
-        # #42: prefer fonts with box-drawing character coverage
+        # #42: prefer fonts with box-drawing character coverage; respect user settings
+        _s = SettingsService.instance().get()
         self._font = QFont()
-        self._font.setFamilies(["DejaVu Sans Mono", "Noto Mono", "Monospace"])
+        self._font.setFamilies([_s.font_family, "DejaVu Sans Mono", "Noto Mono", "Monospace"])
         self._font.setStyleHint(QFont.Monospace)
-        self._font.setPointSize(10)
+        self._font.setPointSize(_s.font_size_terminal)
         fm = QFontMetrics(self._font)
         self._char_w = max(1, fm.horizontalAdvance("M"))
         self._char_h = max(1, fm.height())
@@ -209,6 +232,7 @@ class PtyWidget(QWidget):
 
         _tm = ThemeManager.instance()
         _tm.theme_changed.connect(self._on_theme_changed)
+        SettingsService.instance().settings_changed.connect(self._on_settings_changed)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -263,7 +287,12 @@ class PtyWidget(QWidget):
         env["TERM"]      = "xterm-256color"
         env["COLORTERM"] = "truecolor"
 
-        self._process = PtyProcess(self._cmd, self._cwd, env, rows, cols)
+        _s2 = SettingsService.instance().get()
+        self._process = PtyProcess(
+            self._cmd, self._cwd, env, rows, cols,
+            shell=_s2.default_shell,
+            scrollback=_s2.scrollback_lines,
+        )
         # canvas shares screen reference; lock protects concurrent reads during paintEvent
         self._canvas.set_screen(self._process._screen, self._process._lock)
 
@@ -430,6 +459,22 @@ class PtyWidget(QWidget):
 
     def _on_theme_changed(self, p: Palette) -> None:
         self._canvas.apply_theme(p)
+
+    def _on_settings_changed(self, s: AppSettings) -> None:
+        self._font = QFont()
+        self._font.setFamilies([s.font_family, "DejaVu Sans Mono", "Noto Mono", "Monospace"])
+        self._font.setStyleHint(QFont.Monospace)
+        self._font.setPointSize(s.font_size_terminal)
+        fm = QFontMetrics(self._font)
+        self._char_w = max(1, fm.horizontalAdvance("M"))
+        self._char_h = max(1, fm.height())
+        self._canvas._font = self._font
+        self._canvas._font_bold = QFont(self._font)
+        self._canvas._font_bold.setBold(True)
+        self._canvas._char_w = self._char_w
+        self._canvas._char_h = self._char_h
+        self._canvas._ascent = fm.ascent()
+        self._canvas.update()
 
     def _on_process_finished(self, exit_code: int) -> None:
         screen = self._process._screen if self._process else None

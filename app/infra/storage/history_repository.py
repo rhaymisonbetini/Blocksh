@@ -46,6 +46,17 @@ class HistoryRepository:
         ).fetchall()
         return [self._row_to_block(r) for r in reversed(rows)]
 
+    def clear_all(self) -> None:
+        self._conn.execute("DELETE FROM blocks")
+        self._conn.execute("DELETE FROM sessions")
+        self._conn.commit()
+
+    def clear_older_than(self, days: int) -> None:
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        self._conn.execute("DELETE FROM blocks WHERE created_at < ?", (cutoff,))
+        self._conn.commit()
+
     def load_session(self, session_id: str) -> list[Block]:
         rows = self._conn.execute(
             "SELECT * FROM blocks WHERE session_id = ? ORDER BY created_at",

@@ -28,6 +28,10 @@ class ProjectRepository:
         ).fetchone()
         return self._row_to_project(row) if row else None
 
+    def clear_all(self) -> None:
+        self._conn.execute("DELETE FROM projects")
+        self._conn.commit()
+
     def delete(self, project_id: str) -> None:
         self._conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         self._conn.commit()
