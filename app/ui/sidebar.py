@@ -5,12 +5,44 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QFrame, QScrollArea, QStackedWidget,
     QButtonGroup, QInputDialog, QMenu,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRectF
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 
 from ..domain.block import Block
 from ..domain.favorite import Favorite
 from ..domain.project import Project
 from .theme import Palette, ThemeManager
+
+
+def _make_circular_pixmap(path: str, size: int) -> QPixmap:
+    result = QPixmap(size, size)
+    result.fill(Qt.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.Antialiasing)
+    clip = QPainterPath()
+    clip.addEllipse(QRectF(0, 0, size, size))
+    painter.setClipPath(clip)
+
+    src = QPixmap(path) if path else QPixmap()
+    if not src.isNull():
+        src = src.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        x = (src.width() - size) // 2
+        y = (src.height() - size) // 2
+        painter.drawPixmap(0, 0, src, x, y, size, size)
+    else:
+        painter.setBrush(QColor("#313244"))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QRectF(0, 0, size, size))
+        painter.setPen(QColor("#89b4fa"))
+        font = QFont()
+        font.setPixelSize(size // 2)
+        font.setBold(True)
+        painter.setFont(font)
+        initial = (_username()[0].upper()) if _username() else "U"
+        painter.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, initial)
+
+    painter.end()
+    return result
 
 _TYPE_COLORS: dict[str, str] = {
     "git":     "#89b4fa",
@@ -109,6 +141,7 @@ class Sidebar(QWidget):
     project_rename_requested  = Signal(str, str)   # id, new_name
     project_delete_requested  = Signal(str)        # id
     settings_requested        = Signal()
+    terminal_requested        = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -155,7 +188,9 @@ class Sidebar(QWidget):
             btn = _NavButton(icon, label, active)
             nav_group.addButton(btn)
             self._nav_buttons.append(btn)
-            if label == "History":
+            if label == "Terminal":
+                btn.clicked.connect(self.terminal_requested.emit)
+            elif label == "History":
                 btn.clicked.connect(self._open_history)
             elif label == "Favorites":
                 btn.clicked.connect(self._open_favorites)
@@ -368,25 +403,60 @@ class Sidebar(QWidget):
         w = QWidget()
         w.setStyleSheet("QWidget { background: transparent; }")
         vbox = QVBoxLayout(w)
-        vbox.setContentsMargins(10, 8, 10, 4)
-        vbox.setSpacing(3)
+        vbox.setContentsMargins(8, 6, 8, 4)
+        vbox.setSpacing(2)
 
         self._os_lbl = QLabel(_os_info())
         self._os_lbl.setWordWrap(True)
         self._os_lbl.setStyleSheet("color: #45475a; font-size: 8pt; background: transparent;")
         vbox.addWidget(self._os_lbl)
 
+        # profile row: avatar | username | ⚙ settings button
+        profile_row = QWidget()
+        profile_row.setStyleSheet("QWidget { background: transparent; }")
+        h = QHBoxLayout(profile_row)
+        h.setContentsMargins(0, 2, 0, 2)
+        h.setSpacing(6)
+
+        self._avatar_lbl = QLabel()
+        self._avatar_lbl.setFixedSize(32, 32)
+        self._refresh_avatar()
+        h.addWidget(self._avatar_lbl)
+
         self._user_lbl = QLabel(_username())
-        self._user_lbl.setWordWrap(True)
+        self._user_lbl.setWordWrap(False)
         self._user_lbl.setStyleSheet("color: #6c7086; font-size: 9pt; background: transparent;")
-        vbox.addWidget(self._user_lbl)
+        h.addWidget(self._user_lbl, 1)
+
+        self._profile_settings_btn = QPushButton("⚙")
+        self._profile_settings_btn.setFixedSize(22, 22)
+        self._profile_settings_btn.setToolTip("Open Settings")
+        self._profile_settings_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 10pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        self._profile_settings_btn.clicked.connect(self.settings_requested.emit)
+        h.addWidget(self._profile_settings_btn)
+
+        vbox.addWidget(profile_row)
 
         self._cwd_label = QLabel("~")
         self._cwd_label.setWordWrap(True)
         self._cwd_label.setStyleSheet("color: #89b4fa; font-size: 8pt; background: transparent;")
         vbox.addWidget(self._cwd_label)
 
+        from ..services.settings_service import SettingsService
+        SettingsService.instance().settings_changed.connect(lambda _s: self._refresh_avatar())
+
         return w
+
+    def _refresh_avatar(self) -> None:
+        if not hasattr(self, "_avatar_lbl"):
+            return
+        from ..services.settings_service import SettingsService
+        s = SettingsService.instance().get()
+        pix = _make_circular_pixmap(s.avatar_path, 32)
+        self._avatar_lbl.setPixmap(pix)
 
     # ── theme application ─────────────────────────────────────────────────────
 
@@ -405,6 +475,11 @@ class Sidebar(QWidget):
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
+        if hasattr(self, "_profile_settings_btn"):
+            self._profile_settings_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 10pt; }}"
+                f"QPushButton:hover {{ color: {p.fg}; }}"
+            )
         for btn in self._nav_buttons:
             btn.apply_theme(p)
         self._refresh_themes_list(p)

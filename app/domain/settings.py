@@ -13,3 +13,4 @@ class AppSettings:
     history_limit: int = 200
     auto_scroll: bool = True
     history_retention_days: int = 0   # 0 = keep forever
+    avatar_path: str = ""             # absolute path to profile photo

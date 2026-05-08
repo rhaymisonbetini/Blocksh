@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QFontComboBox, QFrame,
+    QCheckBox, QColorDialog, QComboBox, QFileDialog, QFontComboBox, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
@@ -440,6 +440,35 @@ class _AppearanceSection(QWidget):
             f" border-radius: 4px; font-size: 9pt; padding: 2px 6px; min-height: 24px; }}"
         )
 
+        # profile photo
+        from pathlib import Path as _Path
+        photo_name = _Path(s.avatar_path).name if s.avatar_path else "No photo selected"
+        self._avatar_name_lbl = QLabel(photo_name)
+        self._avatar_name_lbl.setFixedHeight(26)
+        self._avatar_name_lbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-size: 9pt; background: {p.bg_overlay};"
+            f" border: 1px solid {p.border}; border-radius: 4px; padding: 0 6px;"
+        )
+        choose_avatar_btn = _action_btn("Choose...", p)
+        choose_avatar_btn.clicked.connect(self._pick_avatar)
+        clear_avatar_btn = QPushButton("✕")
+        clear_avatar_btn.setFixedSize(26, 26)
+        clear_avatar_btn.setToolTip("Remove photo")
+        clear_avatar_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 10pt; }}"
+            f"QPushButton:hover {{ color: {p.red_ui}; }}"
+        )
+        clear_avatar_btn.clicked.connect(self._clear_avatar)
+        avatar_ctrl = QWidget()
+        avatar_ctrl.setStyleSheet("QWidget { background: transparent; border: none; }")
+        ac = QHBoxLayout(avatar_ctrl)
+        ac.setContentsMargins(0, 0, 0, 0)
+        ac.setSpacing(4)
+        ac.addWidget(self._avatar_name_lbl, 1)
+        ac.addWidget(choose_avatar_btn)
+        ac.addWidget(clear_avatar_btn)
+        vbox.addWidget(_row_widget("Profile photo", avatar_ctrl, p))
+
         # font family
         self._font_combo = QFontComboBox()
         self._font_combo.setFontFilters(QFontComboBox.MonospacedFonts)
@@ -508,6 +537,20 @@ class _AppearanceSection(QWidget):
         ch.addWidget(self._color_btn, 1)
         ch.addWidget(clear_color_btn)
         vbox.addWidget(_row_widget("Output text color", color_row, p))
+
+    def _pick_avatar(self) -> None:
+        from pathlib import Path
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose profile photo", "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"
+        )
+        if path:
+            SettingsService.instance().update(avatar_path=path)
+            self._avatar_name_lbl.setText(Path(path).name)
+
+    def _clear_avatar(self) -> None:
+        SettingsService.instance().update(avatar_path="")
+        self._avatar_name_lbl.setText("No photo selected")
 
     def _pick_output_color(self) -> None:
         s = SettingsService.instance().get()

@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
 
         self._sidebar = Sidebar()
         self._sidebar.settings_requested.connect(self._open_settings)
+        self._sidebar.terminal_requested.connect(self._close_settings)
         self._sidebar.history_open_requested.connect(self._load_history)
         self._sidebar.command_selected.connect(self._on_history_command_selected)
         self._sidebar.theme_selected.connect(lambda name: ThemeManager.instance().set_theme(name))
