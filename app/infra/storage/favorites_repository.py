@@ -21,6 +21,10 @@ class FavoritesRepository:
         ).fetchall()
         return [self._row_to_favorite(r) for r in rows]
 
+    def clear_all(self) -> None:
+        self._conn.execute("DELETE FROM favorites")
+        self._conn.commit()
+
     def delete(self, fav_id: str) -> None:
         self._conn.execute("DELETE FROM favorites WHERE id = ?", (fav_id,))
         self._conn.commit()

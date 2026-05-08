@@ -148,6 +148,24 @@ class ThemeManager(QObject):
     def reload_user_themes(self) -> None:
         self._reload_user_themes()
 
+    def save_user_theme(self, palette: Palette) -> None:
+        if palette.name in _BUILT_IN:
+            raise ValueError(f"Cannot overwrite built-in theme '{palette.name}'")
+        path = THEMES_DIR / f"{palette.name}.json"
+        path.write_text(json.dumps(asdict(palette)))
+        self._themes[palette.name] = palette
+        self.theme_changed.emit(self._current)
+
+    def delete_user_theme(self, name: str) -> None:
+        if name in _BUILT_IN:
+            return
+        (THEMES_DIR / f"{name}.json").unlink(missing_ok=True)
+        self._themes.pop(name, None)
+        if self._current.name == name:
+            self._current = DARK
+            self._save_pref(DARK.name)
+        self.theme_changed.emit(self._current)
+
     # ── persistence ───────────────────────────────────────────────────────────
 
     def _load_pref(self) -> str:

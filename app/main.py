@@ -9,6 +9,7 @@ from .infra.storage.favorites_repository import FavoritesRepository
 from .services.favorites_service import FavoritesService
 from .infra.storage.project_repository import ProjectRepository
 from .services.project_service import ProjectService
+from .services.settings_service import SettingsService
 
 
 def _build_global_qss(p: Palette) -> str:
@@ -57,6 +58,8 @@ def main():
     ThemeManager.instance().theme_changed.connect(_apply_global)
     _apply_global(ThemeManager.instance().current)
 
+    SettingsService.instance()   # init singleton before any widget loads
+
     conn = get_connection()
     initialize_schema(conn)
     repository         = HistoryRepository(conn)
@@ -66,7 +69,12 @@ def main():
     project_service    = ProjectService(project_repo)
     executor           = SubprocessExecutor()
 
-    window = MainWindow(executor, repository, favorites_service, project_service)
+    _s = SettingsService.instance().get()
+    if _s.history_retention_days > 0:
+        repository.clear_older_than(_s.history_retention_days)
+
+    window = MainWindow(executor, repository, favorites_service, project_service,
+                        favorites_repo=favorites_repo, project_repo=project_repo)
     window.show()
 
     sys.exit(app.exec())

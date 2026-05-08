@@ -21,12 +21,16 @@ class MainWindow(QMainWindow):
         repository: HistoryRepository,
         favorites_service: FavoritesService,
         project_service: ProjectService,
+        favorites_repo=None,
+        project_repo=None,
     ):
         super().__init__()
         self._executor           = executor
         self._repository         = repository
         self._favorites_service  = favorites_service
         self._project_service    = project_service
+        self._favorites_repo     = favorites_repo
+        self._project_repo       = project_repo
         self._panels: list[TerminalPanel] = []
         self._active_index  = 0
 
@@ -46,7 +50,14 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self._sidebar = Sidebar()
+        conn = self._repository._conn if hasattr(self._repository, "_conn") else None
+        self._sidebar = Sidebar(
+            repository=self._repository,
+            favorites_repo=self._favorites_repo,
+            project_repo=self._project_repo,
+            conn=conn,
+        )
+        self._sidebar.data_cleared.connect(self._on_data_cleared)
         self._sidebar.history_open_requested.connect(self._load_history)
         self._sidebar.command_selected.connect(self._on_history_command_selected)
         self._sidebar.theme_selected.connect(lambda name: ThemeManager.instance().set_theme(name))
@@ -180,8 +191,15 @@ class MainWindow(QMainWindow):
 
     # ── history ───────────────────────────────────────────────────────────────
 
+    def _on_data_cleared(self) -> None:
+        self._load_history()
+        self._load_favorites()
+        self._load_projects()
+
     def _load_history(self) -> None:
-        blocks = self._repository.load_recent()
+        from ..services.settings_service import SettingsService
+        limit = SettingsService.instance().get().history_limit
+        blocks = self._repository.load_recent(limit=limit)
         self._sidebar.show_history(blocks)
 
     def _on_history_command_selected(self, text: str) -> None:
