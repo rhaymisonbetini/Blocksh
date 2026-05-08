@@ -116,3 +116,4 @@ logs/
 # uv / pip
 uv.lock
 pip-selfcheck.json
+packaging/.tools/
