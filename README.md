@@ -20,12 +20,55 @@
   Built for developers who demand precision, context, and control over every command.
 </p>
 
+<br>
+
+[![Download AppImage](https://img.shields.io/badge/Download-Blocksh--x86__64.AppImage-89b4fa?style=for-the-badge&logo=linux&logoColor=white&labelColor=0d0f1a)](https://github.com/rhaymisonbetini/Blocksh/releases/latest/download/Blocksh-x86_64.AppImage)
+
 </div>
+
+---
+
+## Install
+
+### One-line install (recommended)
+
+Installs Blocksh, creates the app icon and adds it to your system menu:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rhaymisonbetini/Blocksh/main/install.sh | bash
+```
+
+After running, search **Blocksh** in your app launcher (GNOME Activities, KDE, etc.) — the icon will be there.
+
+### Manual install
+
+```bash
+# 1. Download
+wget https://github.com/rhaymisonbetini/Blocksh/releases/latest/download/Blocksh-x86_64.AppImage
+
+# 2. Make executable
+chmod +x Blocksh-x86_64.AppImage
+
+# 3. Run
+./Blocksh-x86_64.AppImage
+```
+
+> **No dependencies required.** Python, PySide6, Qt6 and everything else are bundled inside the AppImage.  
+> All user data is stored in `~/.blocksh/` — created fresh and clean on first launch.
+
+### Uninstall
+
+```bash
+rm ~/.local/bin/Blocksh.AppImage \
+   ~/.local/share/icons/hicolor/256x256/apps/blocksh.png \
+   ~/.local/share/applications/blocksh.desktop
+```
 
 ---
 
 ## Table of Contents
 
+- [Install](#install)
 - [What is Blocksh?](#what-is-blocksh)
 - [Screenshots](#screenshots)
 - [Features](#features)
