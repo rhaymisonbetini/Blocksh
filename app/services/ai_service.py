@@ -99,23 +99,34 @@ class _OpenAiBackend:
         return r.choices[0].message.content
 
 
-_SYSTEM_PROMPT = """\
-You are a terminal assistant with read access to the filesystem.
+_SYSTEM_PROMPT_TEMPLATE = """\
+You are an expert terminal assistant with filesystem read access.
+
+=== SESSION CONTEXT ===
 Working directory: {cwd}
 
-You can use these tools by including them EXACTLY as shown in your response:
-  [READ: /path/to/file]    — read a file (no permission needed)
-  [LIST: /path/to/dir]     — list a directory (no permission needed)
-  [RUN: shell command]     — run a command (user must approve first)
+Files and directories available right now (exact names, case-sensitive):
+{cwd_listing}
+======================
 
-Rules:
-1. Use at most ONE tool per response. You will receive the result in the next message.
-2. Relative paths are resolved from the working directory shown above.
-3. Once you have enough information, write your final answer.
-4. If the final answer IS a shell command the user should run, prefix it with CMD: on its own line.
-   Example: CMD: grep -r "TODO" .
-5. Otherwise write a plain text answer. Be concise and developer-focused.
-6. Never make up file contents — always use [READ:] if you need to see a file."""
+You can use the following tools. Include EXACTLY ONE per response:
+
+  [READ: path]   — read a file (auto-approved, no confirmation)
+  [LIST: path]   — list a directory (auto-approved, no confirmation)
+  [RUN: command] — run a shell command (user must approve before it runs)
+
+IMPORTANT RULES — follow these strictly:
+1. Linux paths are CASE-SENSITIVE. Use the EXACT names shown in the listing above.
+   Wrong: [LIST: App/]   Correct: [LIST: app/]
+2. Prefer RELATIVE paths from the working directory (e.g. app/main.py not /full/path/app/main.py).
+3. Always use ONE tool per response, then wait for the result before continuing.
+4. If a tool returns an error, use [LIST: .] to verify what actually exists, then retry
+   with the exact name. Never repeat a failed path.
+5. When you have enough information, give your final answer.
+6. If the answer IS a shell command the user should run, put it on its own line starting with CMD:
+   Example: CMD: grep -rn "TODO" app/
+7. Otherwise write a clear, concise answer in plain text.
+8. Never invent file contents. Always use [READ:] to see a file before talking about it."""
 
 
 class AgentWorker(QThread):
@@ -154,8 +165,25 @@ class AgentWorker(QThread):
         except Exception as exc:
             self.error_occurred.emit(str(exc))
 
+    def _cwd_snapshot(self) -> str:
+        """Return a compact directory listing to seed the system prompt."""
+        try:
+            entries = sorted(os.listdir(self._cwd))[:40]
+            lines = []
+            for name in entries:
+                fp = os.path.join(self._cwd, name)
+                suffix = "/" if os.path.isdir(fp) else ""
+                lines.append(f"  {name}{suffix}")
+            total = len(os.listdir(self._cwd))
+            if total > 40:
+                lines.append(f"  … ({total - 40} more)")
+            return "\n".join(lines)
+        except Exception:
+            return "  (unable to list)"
+
     def _loop(self) -> None:
-        system = _SYSTEM_PROMPT.format(cwd=self._cwd)
+        listing  = self._cwd_snapshot()
+        system   = _SYSTEM_PROMPT_TEMPLATE.format(cwd=self._cwd, cwd_listing=listing)
         history: list[str] = [f"{system}\n\nUser request: {self._request}"]
 
         for _ in range(self._MAX_TURNS):
@@ -183,12 +211,20 @@ class AgentWorker(QThread):
             result = self._execute_tool(tool, arg)
             if result is None:
                 history.append(response)
-                history.append("[Tool result: User denied permission.]")
+                history.append("[Tool result: User denied permission. Do not retry this command.]")
             else:
-                preview = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
+                is_error = result.startswith("Error")
+                preview  = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
                 self.tool_result_ready.emit(tool, arg, preview)
                 history.append(response)
-                history.append(f"[Tool result for {tool}({arg}):\n{result}\n]")
+                if is_error:
+                    history.append(
+                        f"[Tool result: {result}\n"
+                        f"→ That path does not exist. Use [LIST: .] to see exactly what is "
+                        f"available, then retry using the exact name from the listing.]"
+                    )
+                else:
+                    history.append(f"[Tool result for {tool}({arg}):\n{result}\n]")
 
         self.error_occurred.emit("Reached maximum reasoning steps without a final answer.")
 
@@ -202,10 +238,34 @@ class AgentWorker(QThread):
         return f"Unknown tool: {tool}"
 
     def _abs(self, path: str) -> str:
-        path = os.path.expanduser(path)
+        """Resolve path, with case-insensitive fallback for each component."""
+        path = os.path.expanduser(path.strip())
         if not os.path.isabs(path):
             path = os.path.join(self._cwd, path)
-        return path
+        path = os.path.normpath(path)
+        if os.path.exists(path):
+            return path
+
+        # Walk component by component, matching case-insensitively when exact fails.
+        parts = path.split(os.sep)  # ['', 'home', 'user', 'App', 'main.py']
+        resolved = os.sep
+        for part in parts[1:]:
+            if not part:
+                continue
+            exact = os.path.join(resolved, part)
+            if os.path.exists(exact):
+                resolved = exact
+            else:
+                try:
+                    lower = part.lower()
+                    match = next(
+                        (e for e in os.listdir(resolved) if e.lower() == lower),
+                        None,
+                    )
+                    resolved = os.path.join(resolved, match if match else part)
+                except (PermissionError, NotADirectoryError, OSError):
+                    resolved = os.path.join(resolved, part)
+        return resolved
 
     def _read_file(self, path: str) -> str:
         full = self._abs(path)
