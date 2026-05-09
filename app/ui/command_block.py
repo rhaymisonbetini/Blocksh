@@ -283,7 +283,8 @@ class CommandBlock(QWidget):
             )
             if self._explanation_label:
                 self._explanation_label.setStyleSheet(
-                    f"color: {p.fg}; font-size: 9pt; background: transparent; border: none;"
+                    f"QPlainTextEdit {{ background: transparent; border: none;"
+                    f" color: {p.fg}; font-size: 9pt; }}"
                 )
 
     def _build_ui(self):
@@ -617,21 +618,38 @@ class CommandBlock(QWidget):
             )
             inner = QVBoxLayout(panel)
             inner.setContentsMargins(10, 8, 10, 8)
-            lbl = QLabel()
-            lbl.setWordWrap(True)
-            lbl.setStyleSheet(
-                f"color: {p.fg}; font-size: 9pt; background: transparent; border: none;"
+            edit = QPlainTextEdit()
+            edit.setReadOnly(True)
+            edit.setFrameShape(QFrame.NoFrame)
+            edit.document().setDocumentMargin(0)
+            edit.setContentsMargins(0, 0, 0, 0)
+            edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            edit.setStyleSheet(
+                f"QPlainTextEdit {{ background: transparent; border: none;"
+                f" color: {p.fg}; font-size: 9pt; }}"
             )
-            inner.addWidget(lbl)
-            self._explanation_label = lbl
+            inner.addWidget(edit)
+            self._explanation_label = edit
             self._explanation_panel = panel
             if self._card:
                 self._card.layout().addWidget(panel)
 
         if self._explanation_label:
-            self._explanation_label.setText(f"💡  {text}")
+            self._explanation_label.setPlainText(f"💡  {text}")
+            QTimer.singleShot(0, self._resize_explanation)
         if self._explanation_panel:
             self._explanation_panel.setVisible(True)
+        self._sync_height()
+
+    def _resize_explanation(self) -> None:
+        if self._explanation_label is None:
+            return
+        doc = self._explanation_label.document()
+        line_h = QFontMetrics(self._explanation_label.font()).lineSpacing()
+        doc.setTextWidth(max(self._explanation_label.viewport().width(), 200))
+        content_h = int(doc.size().height()) + 16
+        self._explanation_label.setFixedHeight(max(line_h + 16, min(content_h, 300)))
         self._sync_height()
 
     def _on_fix_clicked(self) -> None:

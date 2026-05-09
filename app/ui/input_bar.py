@@ -144,20 +144,24 @@ class InputBar(QWidget):
 
         self._text_changed_callbacks: list = []
         self._input.textChanged.connect(self._on_text_changed)
+        self._input.textChanged.connect(self._on_ai_mode_check)
+
+        self._ai_btn = QPushButton("✦")
+        self._ai_btn.setFixedSize(32, 32)
+        self._ai_btn.setToolTip(
+            "AI mode — type a request in natural language\n"
+            "e.g.  > list all running docker containers\n"
+            "Click to toggle the '> ' prefix"
+        )
+        self._ai_btn.clicked.connect(self._toggle_ai_prefix)
 
         self._run_btn = QPushButton("▶  Run")
         self._run_btn.setFixedHeight(36)
         self._run_btn.setMinimumWidth(88)
-        self._run_btn.setStyleSheet(
-            "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
-            " border-radius: 6px; font-weight: bold; font-size: 10pt;"
-            " padding: 0 18px; }"
-            "QPushButton:hover { background: #27ae60; }"
-            "QPushButton:pressed { background: #1e8449; }"
-        )
         self._run_btn.clicked.connect(self._submit)
 
         layout.addWidget(self._input)
+        layout.addWidget(self._ai_btn, 0, Qt.AlignTop)
         layout.addWidget(self._run_btn, 0, Qt.AlignTop)
 
     def apply_theme(self, p: Palette) -> None:
@@ -166,6 +170,8 @@ class InputBar(QWidget):
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
             f" font-family: Monospace; font-size: 10pt; }}"
         )
+        ai_mode = self._input.toPlainText().startswith("> ")
+        self._apply_ai_mode_style(p, ai_mode)
 
     # ── dynamic height (#35) ──────────────────────────────────────────────────
 
@@ -308,23 +314,70 @@ class InputBar(QWidget):
         if running:
             self._run_btn.setText("● Running…")
             self._run_btn.setEnabled(False)
+            self._ai_btn.setEnabled(False)
             self._input.setReadOnly(True)
         else:
-            self._run_btn.setText("▶  Run")
             self._run_btn.setEnabled(True)
+            self._ai_btn.setEnabled(True)
             self._input.setReadOnly(False)
+            self._on_ai_mode_check()
 
     def set_thinking(self, active: bool) -> None:
         if active:
             self._run_btn.setText("AI…")
             self._run_btn.setEnabled(False)
+            self._ai_btn.setEnabled(False)
             self._input.setReadOnly(True)
             self._input.setPlaceholderText("Asking AI…")
         else:
-            self._run_btn.setText("▶  Run")
             self._run_btn.setEnabled(True)
+            self._ai_btn.setEnabled(True)
             self._input.setReadOnly(False)
             self._input.setPlaceholderText(random.choice(_PLACEHOLDERS))
+            self._on_ai_mode_check()
+
+    def _toggle_ai_prefix(self) -> None:
+        text = self._input.toPlainText()
+        if text.startswith("> "):
+            self._input.setPlainText(text[2:])
+        else:
+            self._input.setPlainText("> " + text)
+        self._move_cursor_end()
+
+    def _on_ai_mode_check(self) -> None:
+        p = ThemeManager.instance().current
+        ai_mode = self._input.toPlainText().startswith("> ")
+        self._apply_ai_mode_style(p, ai_mode)
+
+    def _apply_ai_mode_style(self, p: Palette, ai_mode: bool) -> None:
+        if ai_mode:
+            self._ai_btn.setStyleSheet(
+                f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
+                f" border-radius: 5px; font-size: 12pt; font-weight: bold; }}"
+                f"QPushButton:hover {{ background: {p.blue}; opacity: 0.85; }}"
+            )
+            self._run_btn.setText("Ask AI →")
+            self._run_btn.setStyleSheet(
+                f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
+                f" border-radius: 6px; font-weight: bold; font-size: 10pt;"
+                f" padding: 0 18px; }}"
+                f"QPushButton:hover {{ background: #74b0e8; }}"
+                f"QPushButton:pressed {{ background: #5a9fd4; }}"
+            )
+        else:
+            self._ai_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
+                f" border-radius: 5px; font-size: 12pt; }}"
+                f"QPushButton:hover {{ color: {p.blue}; }}"
+            )
+            self._run_btn.setText("▶  Run")
+            self._run_btn.setStyleSheet(
+                "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
+                " border-radius: 6px; font-weight: bold; font-size: 10pt;"
+                " padding: 0 18px; }"
+                "QPushButton:hover { background: #27ae60; }"
+                "QPushButton:pressed { background: #1e8449; }"
+            )
 
     def focus(self):
         self._input.setFocus()
