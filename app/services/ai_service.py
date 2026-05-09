@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import re
+import subprocess
+import threading
+
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ..domain.block import Block
@@ -55,9 +60,10 @@ class _OllamaPingBackend:
 
 
 class _AnthropicBackend:
-    def __init__(self, api_key: str, model: str) -> None:
-        self._api_key = api_key
-        self._model   = model
+    def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
+        self._api_key    = api_key
+        self._model      = model
+        self._max_tokens = max_tokens
 
     def complete(self, prompt: str) -> str:
         try:
@@ -67,16 +73,17 @@ class _AnthropicBackend:
         client = anthropic.Anthropic(api_key=self._api_key)
         msg = client.messages.create(
             model=self._model,
-            max_tokens=512,
+            max_tokens=self._max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text
 
 
 class _OpenAiBackend:
-    def __init__(self, api_key: str, model: str) -> None:
-        self._api_key = api_key
-        self._model   = model
+    def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
+        self._api_key    = api_key
+        self._model      = model
+        self._max_tokens = max_tokens
 
     def complete(self, prompt: str) -> str:
         try:
@@ -86,10 +93,177 @@ class _OpenAiBackend:
         client = openai.OpenAI(api_key=self._api_key)
         r = client.chat.completions.create(
             model=self._model,
-            max_tokens=512,
+            max_tokens=self._max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return r.choices[0].message.content
+
+
+_SYSTEM_PROMPT = """\
+You are a terminal assistant with read access to the filesystem.
+Working directory: {cwd}
+
+You can use these tools by including them EXACTLY as shown in your response:
+  [READ: /path/to/file]    — read a file (no permission needed)
+  [LIST: /path/to/dir]     — list a directory (no permission needed)
+  [RUN: shell command]     — run a command (user must approve first)
+
+Rules:
+1. Use at most ONE tool per response. You will receive the result in the next message.
+2. Relative paths are resolved from the working directory shown above.
+3. Once you have enough information, write your final answer.
+4. If the final answer IS a shell command the user should run, prefix it with CMD: on its own line.
+   Example: CMD: grep -r "TODO" .
+5. Otherwise write a plain text answer. Be concise and developer-focused.
+6. Never make up file contents — always use [READ:] if you need to see a file."""
+
+
+class AgentWorker(QThread):
+    tool_called       = Signal(str, str)        # tool_name, argument
+    tool_result_ready = Signal(str, str, str)   # tool_name, argument, short_preview
+    permission_needed = Signal(str)             # command string waiting for approval
+    final_answer      = Signal(str)             # plain-text answer to show inline
+    command_ready     = Signal(str)             # shell command → put in InputBar
+    error_occurred    = Signal(str)
+
+    _MAX_TURNS      = 10
+    _MAX_FILE_BYTES = 10_000
+    _MAX_LIST_ITEMS = 60
+    _PERM_TIMEOUT   = 120  # seconds
+
+    def __init__(self, request: str, cwd: str, backend) -> None:
+        super().__init__()
+        self._request  = request
+        self._cwd      = cwd
+        self._backend  = backend
+        self._perm_event   = threading.Event()
+        self._perm_granted = False
+        self._cancelled    = False
+
+    def grant_permission(self, allowed: bool) -> None:
+        self._perm_granted = allowed
+        self._perm_event.set()
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        self._perm_event.set()
+
+    def run(self) -> None:
+        try:
+            self._loop()
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
+
+    def _loop(self) -> None:
+        system = _SYSTEM_PROMPT.format(cwd=self._cwd)
+        history: list[str] = [f"{system}\n\nUser request: {self._request}"]
+
+        for _ in range(self._MAX_TURNS):
+            if self._cancelled:
+                return
+
+            response = self._backend.complete("\n\n".join(history)).strip()
+
+            # Final shell command?
+            cmd_match = re.search(r'^CMD:\s*(.+)$', response, re.MULTILINE)
+            if cmd_match:
+                self.command_ready.emit(cmd_match.group(1).strip())
+                return
+
+            # Tool call?
+            tool_match = re.search(r'\[(READ|LIST|RUN):\s*(.+?)\]', response, re.IGNORECASE)
+            if not tool_match:
+                self.final_answer.emit(response)
+                return
+
+            tool = tool_match.group(1).upper()
+            arg  = tool_match.group(2).strip()
+            self.tool_called.emit(tool, arg)
+
+            result = self._execute_tool(tool, arg)
+            if result is None:
+                history.append(response)
+                history.append("[Tool result: User denied permission.]")
+            else:
+                preview = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
+                self.tool_result_ready.emit(tool, arg, preview)
+                history.append(response)
+                history.append(f"[Tool result for {tool}({arg}):\n{result}\n]")
+
+        self.error_occurred.emit("Reached maximum reasoning steps without a final answer.")
+
+    def _execute_tool(self, tool: str, arg: str) -> str | None:
+        if tool == "READ":
+            return self._read_file(arg)
+        if tool == "LIST":
+            return self._list_dir(arg)
+        if tool == "RUN":
+            return self._run_with_permission(arg)
+        return f"Unknown tool: {tool}"
+
+    def _abs(self, path: str) -> str:
+        path = os.path.expanduser(path)
+        if not os.path.isabs(path):
+            path = os.path.join(self._cwd, path)
+        return path
+
+    def _read_file(self, path: str) -> str:
+        full = self._abs(path)
+        try:
+            with open(full, "rb") as fh:
+                raw = fh.read(self._MAX_FILE_BYTES)
+            text = raw.decode("utf-8", errors="replace")
+            size = os.path.getsize(full)
+            if size > self._MAX_FILE_BYTES:
+                text += f"\n… [showing first {self._MAX_FILE_BYTES} of {size} bytes]"
+            return text
+        except Exception as exc:
+            return f"Error reading file: {exc}"
+
+    def _list_dir(self, path: str) -> str:
+        full = self._abs(path)
+        try:
+            entries = sorted(os.listdir(full))[: self._MAX_LIST_ITEMS]
+            lines = []
+            for name in entries:
+                fp = os.path.join(full, name)
+                if os.path.isdir(fp):
+                    lines.append(f"{name}/")
+                else:
+                    try:
+                        sz = os.path.getsize(fp)
+                        lines.append(f"{name}  ({sz:,} bytes)")
+                    except OSError:
+                        lines.append(name)
+            total = len(os.listdir(full))
+            suffix = f"\n… ({total - self._MAX_LIST_ITEMS} more)" if total > self._MAX_LIST_ITEMS else ""
+            return ("\n".join(lines) or "(empty directory)") + suffix
+        except Exception as exc:
+            return f"Error listing directory: {exc}"
+
+    def _run_with_permission(self, command: str) -> str | None:
+        self._perm_event.clear()
+        self._perm_granted = False
+        self.permission_needed.emit(command)
+
+        if not self._perm_event.wait(timeout=self._PERM_TIMEOUT):
+            return "Timeout — no response from user."
+        if self._cancelled or not self._perm_granted:
+            return None
+
+        try:
+            proc = subprocess.run(
+                command, shell=True, capture_output=True, text=True,
+                timeout=30, cwd=self._cwd,
+            )
+            output = (proc.stdout + proc.stderr).strip() or "(no output)"
+            if len(output) > 3000:
+                output = output[:3000] + "\n… [truncated]"
+            return output
+        except subprocess.TimeoutExpired:
+            return "Command timed out after 30 seconds."
+        except Exception as exc:
+            return f"Error running command: {exc}"
 
 
 class AiService(QObject):
@@ -126,6 +300,9 @@ class AiService(QObject):
             "Return ONLY the corrected shell command, nothing else. No explanation, no markdown."
         )
         return _AiWorker(prompt, self._get_backend())
+
+    def agent_chat(self, request: str, cwd: str) -> AgentWorker:
+        return AgentWorker(request, cwd, self._get_backend())
 
     def translate(self, text: str, cwd: str) -> _AiWorker:
         prompt = (

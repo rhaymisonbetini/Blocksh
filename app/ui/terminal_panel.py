@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, QPoint, Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 
+from .ai_permission_banner import AiPermissionBanner
 from .command_block import CommandBlock
 from .completion_popup import CompletionPopup
 from .input_bar import InputBar
@@ -65,6 +66,7 @@ class TerminalPanel(QWidget):
         self._active_cmd:      Command   | None = None
         self._running_thread:  CommandThread | None = None
         self._ai_workers:      list = []
+        self._agent_worker     = None   # current AgentWorker (if running)
 
         self._build_ui()
         self._wire_completion()
@@ -130,6 +132,9 @@ class TerminalPanel(QWidget):
         self._sep.setFrameShape(QFrame.HLine)
         layout.addWidget(self._sep)
 
+        self._permission_banner = AiPermissionBanner()
+        layout.addWidget(self._permission_banner)
+
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
         layout.addWidget(self._input_bar)
@@ -164,7 +169,7 @@ class TerminalPanel(QWidget):
             return
 
         if text.startswith("> "):
-            self._translate_to_command(text[2:].strip())
+            self._agent_chat(text[2:].strip())
             return
 
         command = Command(text=text)
@@ -441,19 +446,68 @@ class TerminalPanel(QWidget):
         self._ai_workers.append(worker)
         worker.start()
 
-    def _translate_to_command(self, text: str) -> None:
-        from ..services.ai_service import AiService
+    def _agent_chat(self, request: str) -> None:
+        from ..services.ai_service import AiService, AgentWorker
         if not AiService.instance().is_enabled():
             return
+
+        # Cancel any running agent
+        if self._agent_worker is not None:
+            self._agent_worker.cancel()
+            self._agent_worker = None
+
         self._input_bar.set_thinking(True)
-        worker = AiService.instance().translate(text, self._session.cwd)
 
-        def _done(cmd: str) -> None:
+        # Create a visible block for the AI conversation
+        from ..domain.command import Command
+        from ..domain.block import Block
+        cmd  = Command(text=f"> {request}")
+        blk  = Block(command=cmd, stdout="", stderr="", exit_code=-1, cwd=self._session.cwd)
+        bw   = CommandBlock(blk)
+        bw.remove_requested.connect(self._remove_block)
+        self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, bw)
+
+        worker = AiService.instance().agent_chat(request, self._session.cwd)
+        self._agent_worker = worker
+
+        def _on_tool(tool: str, arg: str) -> None:
+            icons = {"READ": "📄", "LIST": "📂", "RUN": "⚙"}
+            bw.append_output(f"{icons.get(tool, '🔧')} {tool}: {arg}\n")
+
+        def _on_tool_result(tool: str, arg: str, preview: str) -> None:
+            bw.append_output(f"   ↳ {preview}\n")
+
+        def _on_permission(command: str) -> None:
+            bw.append_output(f"⚠  Asking permission to run: {command}\n")
+            self._permission_banner.show_request(command)
+            self._permission_banner.allowed.connect(lambda: worker.grant_permission(True))
+            self._permission_banner.denied.connect(lambda: worker.grant_permission(False))
+
+        def _on_final(text: str) -> None:
             self._input_bar.set_thinking(False)
-            self._input_bar.set_text(cmd)
+            bw.append_output(f"\n💡 {text}")
+            bw.finalize(0)
+            self._agent_worker = None
 
-        worker.result_ready.connect(_done)
-        worker.error_occurred.connect(lambda _: self._input_bar.set_thinking(False))
+        def _on_command(cmd_text: str) -> None:
+            self._input_bar.set_thinking(False)
+            bw.append_output(f"\n→ {cmd_text}")
+            bw.finalize(0)
+            self._input_bar.set_text(cmd_text)
+            self._agent_worker = None
+
+        def _on_error(msg: str) -> None:
+            self._input_bar.set_thinking(False)
+            bw.append_output(f"\n⚠  {msg}")
+            bw.finalize(1)
+            self._agent_worker = None
+
+        worker.tool_called.connect(_on_tool)
+        worker.tool_result_ready.connect(_on_tool_result)
+        worker.permission_needed.connect(_on_permission)
+        worker.final_answer.connect(_on_final)
+        worker.command_ready.connect(_on_command)
+        worker.error_occurred.connect(_on_error)
         self._ai_workers.append(worker)
         worker.start()
 
