@@ -159,6 +159,7 @@ class _OutputHighlighter(QSyntaxHighlighter):
 class CommandBlock(QWidget):
     remove_requested   = Signal(object)
     favorite_requested = Signal(str, str, str)  # name, command_text, cwd
+    fix_requested      = Signal(str, str, str)  # command_text, stderr, cwd
 
     def __init__(self, block: Block, parent=None):
         super().__init__(parent)
@@ -172,7 +173,12 @@ class CommandBlock(QWidget):
         self._prompt_lbl: QLabel | None      = None
         self._cmd_lbl:    QLabel | None      = None
         self._ts_lbl:     QLabel | None      = None
+        self._explain_btn: QPushButton | None = None
+        self._fix_btn:     QPushButton | None = None
         self._menu_btn:   QPushButton | None = None
+        self._explanation_panel: QFrame | None = None
+        self._explanation_label: QLabel | None = None
+        self._workers: list = []
         self._raw_output: str = ""
         self._resize_pending: bool = False
         self._build_ui()
@@ -259,6 +265,26 @@ class CommandBlock(QWidget):
                 f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
+        if self._explain_btn:
+            self._explain_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
+                f" font-size: 9pt; padding: 0 2px; }}"
+                f"QPushButton:hover {{ color: {p.fg}; }}"
+            )
+        if self._fix_btn:
+            self._fix_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.red}; border: 1px solid {p.red};"
+                f" border-radius: 3px; font-size: 8pt; padding: 0 5px; }}"
+                f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
+            )
+        if self._explanation_panel:
+            self._explanation_panel.setStyleSheet(
+                f"QFrame {{ background: {p.bg_overlay}; border-radius: 4px; border: none; }}"
+            )
+            if self._explanation_label:
+                self._explanation_label.setStyleSheet(
+                    f"color: {p.fg}; font-size: 9pt; background: transparent; border: none;"
+                )
 
     def _build_ui(self):
         row = QHBoxLayout(self)
@@ -336,6 +362,30 @@ class CommandBlock(QWidget):
         self._ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
         self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         layout.addWidget(self._ts_lbl)
+
+        self._explain_btn = QPushButton("?")
+        self._explain_btn.setFixedSize(22, 22)
+        self._explain_btn.setToolTip("Explain with AI")
+        self._explain_btn.setVisible(False)
+        self._explain_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
+            f" font-size: 9pt; padding: 0 2px; }}"
+            f"QPushButton:hover {{ color: {p.fg}; }}"
+        )
+        self._explain_btn.clicked.connect(self._on_explain_clicked)
+        layout.addWidget(self._explain_btn)
+
+        self._fix_btn = QPushButton("Fix ↗")
+        self._fix_btn.setFixedHeight(22)
+        self._fix_btn.setToolTip("Fix this command with AI")
+        self._fix_btn.setVisible(False)
+        self._fix_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.red}; border: 1px solid {p.red};"
+            f" border-radius: 3px; font-size: 8pt; padding: 0 5px; }}"
+            f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
+        )
+        self._fix_btn.clicked.connect(self._on_fix_clicked)
+        layout.addWidget(self._fix_btn)
 
         self._menu_btn = QPushButton("⋮")
         self._menu_btn.setFixedSize(22, 22)
@@ -443,6 +493,14 @@ class CommandBlock(QWidget):
             _insert_ansi_text(cursor, display)
             self._output_widget.setTextCursor(cursor)
             self._resize_output()
+
+        from ..services.ai_service import AiService
+        if AiService.instance().is_enabled():
+            if self._explain_btn:
+                self._explain_btn.setVisible(True)
+            if self._fix_btn and exit_code != 0:
+                self._fix_btn.setVisible(True)
+
         self._sync_height()
 
     def _build_output_empty(self) -> _OutputEdit:
@@ -521,4 +579,65 @@ class CommandBlock(QWidget):
         name, ok = QInputDialog.getText(self, "Add to Favorites", "Name:", text=default)
         if ok and name.strip():
             self.favorite_requested.emit(name.strip(), self._block.command.text, self._block.cwd)
+
+    # ── AI actions ────────────────────────────────────────────────────────────
+
+    def _on_explain_clicked(self) -> None:
+        if self._explanation_panel and self._explanation_panel.isVisible():
+            self._explanation_panel.setVisible(False)
+            self._sync_height()
+            return
+
+        from ..services.ai_service import AiService
+        if not AiService.instance().is_enabled():
+            return
+
+        if self._explain_btn:
+            self._explain_btn.setText("…")
+            self._explain_btn.setEnabled(False)
+
+        worker = AiService.instance().explain(self._block)
+        worker.result_ready.connect(self._show_explanation)
+        worker.error_occurred.connect(lambda msg: self._show_explanation(f"⚠  {msg}"))
+        worker.finished.connect(self._reset_explain_btn)
+        self._workers.append(worker)
+        worker.start()
+
+    def _reset_explain_btn(self) -> None:
+        if self._explain_btn:
+            self._explain_btn.setText("?")
+            self._explain_btn.setEnabled(True)
+
+    def _show_explanation(self, text: str) -> None:
+        p = ThemeManager.instance().current
+        if self._explanation_panel is None:
+            panel = QFrame()
+            panel.setStyleSheet(
+                f"QFrame {{ background: {p.bg_overlay}; border-radius: 4px; border: none; }}"
+            )
+            inner = QVBoxLayout(panel)
+            inner.setContentsMargins(10, 8, 10, 8)
+            lbl = QLabel()
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet(
+                f"color: {p.fg}; font-size: 9pt; background: transparent; border: none;"
+            )
+            inner.addWidget(lbl)
+            self._explanation_label = lbl
+            self._explanation_panel = panel
+            if self._card:
+                self._card.layout().addWidget(panel)
+
+        if self._explanation_label:
+            self._explanation_label.setText(f"💡  {text}")
+        if self._explanation_panel:
+            self._explanation_panel.setVisible(True)
+        self._sync_height()
+
+    def _on_fix_clicked(self) -> None:
+        self.fix_requested.emit(
+            self._block.command.text,
+            self._block.stderr,
+            self._block.cwd,
+        )
 

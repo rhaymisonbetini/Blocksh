@@ -314,5 +314,17 @@ class InputBar(QWidget):
             self._run_btn.setEnabled(True)
             self._input.setReadOnly(False)
 
+    def set_thinking(self, active: bool) -> None:
+        if active:
+            self._run_btn.setText("AI…")
+            self._run_btn.setEnabled(False)
+            self._input.setReadOnly(True)
+            self._input.setPlaceholderText("Asking AI…")
+        else:
+            self._run_btn.setText("▶  Run")
+            self._run_btn.setEnabled(True)
+            self._input.setReadOnly(False)
+            self._input.setPlaceholderText(random.choice(_PLACEHOLDERS))
+
     def focus(self):
         self._input.setFocus()

@@ -64,6 +64,7 @@ class TerminalPanel(QWidget):
         self._pty_widget:      PtyWidget | None = None
         self._active_cmd:      Command   | None = None
         self._running_thread:  CommandThread | None = None
+        self._ai_workers:      list = []
 
         self._build_ui()
         self._wire_completion()
@@ -162,6 +163,10 @@ class TerminalPanel(QWidget):
             self.clear_blocks()
             return
 
+        if text.startswith("> "):
+            self._translate_to_command(text[2:].strip())
+            return
+
         command = Command(text=text)
 
         if self._session.try_cd(text):
@@ -180,6 +185,7 @@ class TerminalPanel(QWidget):
             block_widget = CommandBlock(initial_block)
             block_widget.remove_requested.connect(self._remove_block)
             block_widget.favorite_requested.connect(self.favorite_requested)
+            block_widget.fix_requested.connect(self._on_fix_requested)
             self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, block_widget)
 
             thread = CommandThread(command, self._session.cwd, self._session.env)
@@ -410,12 +416,54 @@ class TerminalPanel(QWidget):
         except (PermissionError, FileNotFoundError, OSError):
             return []
 
+    # ── AI handlers ───────────────────────────────────────────────────────────
+
+    def _on_fix_requested(self, command_text: str, stderr: str, cwd: str) -> None:
+        from ..services.ai_service import AiService
+        if not AiService.instance().is_enabled():
+            return
+        self._input_bar.set_thinking(True)
+        block = Block(
+            command=Command(text=command_text),
+            stdout="",
+            stderr=stderr,
+            exit_code=1,
+            cwd=cwd,
+        )
+        worker = AiService.instance().fix(block)
+
+        def _done(text: str) -> None:
+            self._input_bar.set_thinking(False)
+            self._input_bar.set_text(text)
+
+        worker.result_ready.connect(_done)
+        worker.error_occurred.connect(lambda _: self._input_bar.set_thinking(False))
+        self._ai_workers.append(worker)
+        worker.start()
+
+    def _translate_to_command(self, text: str) -> None:
+        from ..services.ai_service import AiService
+        if not AiService.instance().is_enabled():
+            return
+        self._input_bar.set_thinking(True)
+        worker = AiService.instance().translate(text, self._session.cwd)
+
+        def _done(cmd: str) -> None:
+            self._input_bar.set_thinking(False)
+            self._input_bar.set_text(cmd)
+
+        worker.result_ready.connect(_done)
+        worker.error_occurred.connect(lambda _: self._input_bar.set_thinking(False))
+        self._ai_workers.append(worker)
+        worker.start()
+
     # ── block management ──────────────────────────────────────────────────────
 
     def _add_block(self, block: Block) -> None:
         widget = CommandBlock(block)
         widget.remove_requested.connect(self._remove_block)
         widget.favorite_requested.connect(self.favorite_requested)
+        widget.fix_requested.connect(self._on_fix_requested)
         self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, widget)
 
     def _remove_block(self, widget: QWidget) -> None:

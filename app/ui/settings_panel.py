@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
@@ -8,9 +9,9 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QCheckBox, QColorDialog, QComboBox, QFileDialog, QFontComboBox, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 
 from .theme import Palette, ThemeManager
@@ -689,6 +690,215 @@ class _TerminalSection(QWidget):
         pass
 
 
+# ── AI Assistant Section ──────────────────────────────────────────────────────
+
+_OLLAMA_MODELS    = ["qwen2.5-coder:1.5b", "llama3.2:1b", "phi3.5:mini",
+                     "deepseek-r1:1.5b", "llama3.2:3b", "qwen2.5-coder:7b"]
+_ANTHROPIC_MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"]
+_OPENAI_MODELS    = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]
+_BACKEND_NAMES    = ["ollama", "anthropic", "openai"]
+
+
+class _AiSection(QWidget):
+    def __init__(self, p: Palette, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("QWidget { background: transparent; border: none; }")
+        self._workers: list = []
+        self._build(p)
+
+    def _build(self, p: Palette) -> None:
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(6)
+
+        s = SettingsService.instance().get()
+        ctrl_style = (
+            f"QComboBox, QLineEdit {{"
+            f" background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 4px; font-size: 9pt; padding: 2px 6px; min-height: 24px; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+        )
+
+        # Enable AI toggle
+        self._enable_cb = QCheckBox("Enable AI features")
+        self._enable_cb.setChecked(s.ai_enabled)
+        self._enable_cb.setStyleSheet(
+            f"QCheckBox {{ color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none; }}"
+            f"QCheckBox::indicator {{ width: 14px; height: 14px; }}"
+        )
+        self._enable_cb.stateChanged.connect(
+            lambda st: SettingsService.instance().update(ai_enabled=bool(st))
+        )
+        vbox.addWidget(self._enable_cb)
+
+        # Backend selector
+        self._backend_combo = QComboBox()
+        self._backend_combo.addItems(["Ollama (offline)", "Anthropic (Claude)", "OpenAI (GPT)"])
+        self._backend_combo.setCurrentIndex(_BACKEND_NAMES.index(s.ai_backend)
+                                            if s.ai_backend in _BACKEND_NAMES else 0)
+        self._backend_combo.setStyleSheet(ctrl_style)
+        self._backend_combo.currentIndexChanged.connect(self._on_backend_changed)
+        vbox.addWidget(_row_widget("Backend", self._backend_combo, p))
+
+        # Stacked panels per backend
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet("QWidget { background: transparent; border: none; }")
+
+        # ── Ollama ──────────────────────────────────────────────────────────
+        ollama_w = QWidget()
+        ollama_w.setStyleSheet("QWidget { background: transparent; border: none; }")
+        ov = QVBoxLayout(ollama_w)
+        ov.setContentsMargins(0, 0, 0, 0)
+        ov.setSpacing(4)
+
+        self._ollama_host = QLineEdit(s.ai_ollama_host)
+        self._ollama_host.setStyleSheet(ctrl_style)
+        self._ollama_host.editingFinished.connect(
+            lambda: SettingsService.instance().update(ai_ollama_host=self._ollama_host.text())
+        )
+        ov.addWidget(_row_widget("Host", self._ollama_host, p))
+
+        self._ollama_model = QComboBox()
+        self._ollama_model.addItems(_OLLAMA_MODELS)
+        self._ollama_model.setEditable(True)
+        self._ollama_model.setCurrentText(s.ai_ollama_model)
+        self._ollama_model.setStyleSheet(ctrl_style)
+        self._ollama_model.currentTextChanged.connect(
+            lambda t: SettingsService.instance().update(ai_ollama_model=t)
+        )
+        ov.addWidget(_row_widget("Model", self._ollama_model, p))
+
+        status_row = QWidget()
+        status_row.setStyleSheet("QWidget { background: transparent; border: none; }")
+        sh = QHBoxLayout(status_row)
+        sh.setContentsMargins(0, 0, 0, 0)
+        sh.setSpacing(8)
+        slbl = QLabel("Status:")
+        slbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none;"
+        )
+        slbl.setFixedWidth(130)
+        self._ollama_status = QLabel("● Checking…")
+        self._ollama_status.setStyleSheet(
+            f"color: {p.fg_dim}; font-size: 9pt; background: transparent; border: none;"
+        )
+        recheck_btn = _action_btn("Re-check", p)
+        recheck_btn.clicked.connect(self._check_ollama)
+        sh.addWidget(slbl)
+        sh.addWidget(self._ollama_status, 1)
+        sh.addWidget(recheck_btn)
+        ov.addWidget(status_row)
+        self._stack.addWidget(ollama_w)
+
+        # ── Anthropic ───────────────────────────────────────────────────────
+        anth_w = QWidget()
+        anth_w.setStyleSheet("QWidget { background: transparent; border: none; }")
+        av = QVBoxLayout(anth_w)
+        av.setContentsMargins(0, 0, 0, 0)
+        av.setSpacing(4)
+
+        self._anthropic_key = QLineEdit(s.ai_anthropic_key)
+        self._anthropic_key.setEchoMode(QLineEdit.Password)
+        self._anthropic_key.setPlaceholderText("sk-ant-…")
+        self._anthropic_key.setStyleSheet(ctrl_style)
+        self._anthropic_key.editingFinished.connect(
+            lambda: SettingsService.instance().update(ai_anthropic_key=self._anthropic_key.text())
+        )
+        av.addWidget(_row_widget("API key", self._anthropic_key, p))
+
+        self._anthropic_model = QComboBox()
+        self._anthropic_model.addItems(_ANTHROPIC_MODELS)
+        self._anthropic_model.setCurrentText(s.ai_anthropic_model)
+        self._anthropic_model.setStyleSheet(ctrl_style)
+        self._anthropic_model.currentTextChanged.connect(
+            lambda t: SettingsService.instance().update(ai_anthropic_model=t)
+        )
+        av.addWidget(_row_widget("Model", self._anthropic_model, p))
+
+        warn_a = QLabel("⚠  API key stored as plaintext in ~/.blocksh/settings.json")
+        warn_a.setWordWrap(True)
+        warn_a.setStyleSheet(
+            f"color: {p.red}; font-size: 8pt; background: transparent; border: none;"
+        )
+        av.addWidget(warn_a)
+        self._stack.addWidget(anth_w)
+
+        # ── OpenAI ──────────────────────────────────────────────────────────
+        oai_w = QWidget()
+        oai_w.setStyleSheet("QWidget { background: transparent; border: none; }")
+        ov2 = QVBoxLayout(oai_w)
+        ov2.setContentsMargins(0, 0, 0, 0)
+        ov2.setSpacing(4)
+
+        self._openai_key = QLineEdit(s.ai_openai_key)
+        self._openai_key.setEchoMode(QLineEdit.Password)
+        self._openai_key.setPlaceholderText("sk-…")
+        self._openai_key.setStyleSheet(ctrl_style)
+        self._openai_key.editingFinished.connect(
+            lambda: SettingsService.instance().update(ai_openai_key=self._openai_key.text())
+        )
+        ov2.addWidget(_row_widget("API key", self._openai_key, p))
+
+        self._openai_model = QComboBox()
+        self._openai_model.addItems(_OPENAI_MODELS)
+        self._openai_model.setCurrentText(s.ai_openai_model)
+        self._openai_model.setStyleSheet(ctrl_style)
+        self._openai_model.currentTextChanged.connect(
+            lambda t: SettingsService.instance().update(ai_openai_model=t)
+        )
+        ov2.addWidget(_row_widget("Model", self._openai_model, p))
+
+        warn_o = QLabel("⚠  API key stored as plaintext in ~/.blocksh/settings.json")
+        warn_o.setWordWrap(True)
+        warn_o.setStyleSheet(
+            f"color: {p.red}; font-size: 8pt; background: transparent; border: none;"
+        )
+        ov2.addWidget(warn_o)
+        self._stack.addWidget(oai_w)
+
+        vbox.addWidget(self._stack)
+        self._stack.setCurrentIndex(_BACKEND_NAMES.index(s.ai_backend)
+                                    if s.ai_backend in _BACKEND_NAMES else 0)
+
+        QTimer.singleShot(200, self._check_ollama)
+
+    def _on_backend_changed(self, index: int) -> None:
+        SettingsService.instance().update(ai_backend=_BACKEND_NAMES[index])
+        self._stack.setCurrentIndex(index)
+
+    def _check_ollama(self) -> None:
+        from ..services.ai_service import AiService
+        self._ollama_status.setText("● Checking…")
+        p = ThemeManager.instance().current
+        self._ollama_status.setStyleSheet(
+            f"color: {p.fg_dim}; font-size: 9pt; background: transparent; border: none;"
+        )
+        host = SettingsService.instance().get().ai_ollama_host
+        worker = AiService.instance().check_ollama(host)
+
+        def _ok(_: str) -> None:
+            p2 = ThemeManager.instance().current
+            self._ollama_status.setText("● Running")
+            self._ollama_status.setStyleSheet(
+                f"color: {p2.green}; font-size: 9pt; background: transparent; border: none;"
+            )
+
+        def _fail(_: str) -> None:
+            p2 = ThemeManager.instance().current
+            self._ollama_status.setText("✗ Not running — install at ollama.com")
+            self._ollama_status.setStyleSheet(
+                f"color: {p2.red}; font-size: 9pt; background: transparent; border: none;"
+            )
+
+        worker.result_ready.connect(_ok)
+        worker.error_occurred.connect(_fail)
+        self._workers.append(worker)
+        worker.start()
+
+    def apply_theme(self, p: Palette) -> None:
+        pass
+
+
 # ── Main Settings Panel ───────────────────────────────────────────────────────
 
 class SettingsPanel(QWidget):
@@ -748,6 +958,13 @@ class SettingsPanel(QWidget):
         left_col.addWidget(frame2)
         self._sections.append(self._terminal)
 
+        # ── AI Assistant ──────────────────────────────────────────────────────
+        frame5, layout5 = _section_frame("AI Assistant", p)
+        self._ai = _AiSection(p)
+        layout5.addWidget(self._ai)
+        left_col.addWidget(frame5)
+        self._sections.append(self._ai)
+
         left_col.addStretch()
 
         # ── Theme Creator ─────────────────────────────────────────────────────
@@ -774,7 +991,7 @@ class SettingsPanel(QWidget):
         outer.addLayout(cols)
 
         # store frame references for theme updates
-        self._frames = [frame, frame2, frame3, frame4]
+        self._frames = [frame, frame2, frame3, frame4, frame5]
 
     def apply_theme(self, p: Palette) -> None:
         frame_style = (
