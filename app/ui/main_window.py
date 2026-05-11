@@ -419,8 +419,7 @@ class MainWindow(QMainWindow):
         if not conn:
             return
         if self._panels:
-            self._panels[self._active_index].set_input_text(conn.to_command())
-            self._panels[self._active_index].focus_input()
+            self._panels[self._active_index]._on_command(conn.to_command())
         self._ssh_service.touch(conn_id)
 
     def _on_ssh_add(self) -> None:
