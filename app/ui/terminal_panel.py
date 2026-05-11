@@ -277,10 +277,19 @@ class TerminalPanel(QWidget):
 
         self._active_cmd = command
 
+        # Commands in _ALWAYS_INTERACTIVE are system binaries (ssh, vim, htop…).
+        # Run them directly without a bash -i -c wrapper: this avoids bash startup
+        # latency and TTY-mode interference that can prevent password/prompt output.
+        parts = text.strip().split()
+        cmd_name = os.path.basename(parts[0]) if parts else ""
+        direct = cmd_name in _ALWAYS_INTERACTIVE
+
         # Overlay the PTY widget over the full panel geometry instead of
         # inserting it into the layout — this guarantees pixel-perfect coverage
         # with no leftover sliver from hidden siblings.
-        self._pty_widget = PtyWidget(text, self._session.cwd, self._session.env, parent=self)
+        self._pty_widget = PtyWidget(
+            text, self._session.cwd, self._session.env, parent=self, direct=direct
+        )
         self._pty_widget.session_finished.connect(self._on_pty_finished)
         self._pty_widget.setGeometry(self.rect())
         self._pty_widget.show()

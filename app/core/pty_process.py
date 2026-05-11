@@ -32,6 +32,7 @@ class PtyProcess(QThread):
         cols: int = 80,
         shell: str = "bash",
         scrollback: int = 2000,
+        direct: bool = False,
     ):
         super().__init__()
         self._cmd       = cmd
@@ -40,6 +41,7 @@ class PtyProcess(QThread):
         self._rows      = rows
         self._cols      = cols
         self._shell     = shell
+        self._direct    = direct
         self._master_fd = -1
         self._proc: subprocess.Popen | None = None
 
@@ -51,12 +53,20 @@ class PtyProcess(QThread):
     # ── public API ────────────────────────────────────────────────────────────
 
     def start_process(self) -> None:
-        import pty
+        import pty, shlex
         self._master_fd, slave_fd = pty.openpty()
         self._set_winsize(slave_fd, self._rows, self._cols)
 
+        # direct=True: run the command directly (e.g. ssh, vim) — no bash wrapper.
+        # This avoids bash -i startup delay and TTY mode changes that can prevent
+        # programs like ssh from showing password/key prompts.
+        if self._direct:
+            args = shlex.split(self._cmd)
+        else:
+            args = [self._shell, "-i", "-c", self._cmd]
+
         self._proc = subprocess.Popen(
-            [self._shell, "-i", "-c", self._cmd],
+            args,
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,

@@ -204,11 +204,12 @@ class PtyWidget(QWidget):
 
     session_finished = Signal(int, str)   # (exit_code, final_screen_text)
 
-    def __init__(self, cmd: str, cwd: str, env: dict, parent=None):
+    def __init__(self, cmd: str, cwd: str, env: dict, parent=None, direct: bool = False):
         super().__init__(parent)
-        self._cmd = cmd
-        self._cwd = cwd
-        self._env = env
+        self._cmd    = cmd
+        self._cwd    = cwd
+        self._env    = env
+        self._direct = direct
 
         self._process: PtyProcess | None = None
         self._render_pending = False
@@ -292,6 +293,7 @@ class PtyWidget(QWidget):
             self._cmd, self._cwd, env, rows, cols,
             shell=_s2.default_shell,
             scrollback=_s2.scrollback_lines,
+            direct=self._direct,
         )
         # canvas shares screen reference; lock protects concurrent reads during paintEvent
         self._canvas.set_screen(self._process._screen, self._process._lock)
