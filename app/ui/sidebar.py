@@ -11,6 +11,7 @@ from ..domain.block import Block
 from ..domain.favorite import Favorite
 from ..domain.project import Project
 from ..domain.ssh_connection import SshConnection
+from ..domain.workflow import Workflow
 from .theme import Palette, ThemeManager
 
 _TYPE_COLORS: dict[str, str] = {
@@ -45,6 +46,7 @@ _NAV_MAIN = [
     ("◇",  "Favorites",  False),
     ("⊞",  "Projects",   False),
     ("⌁",  "SSH",        False),
+    ("▶",  "Workflows",  False),
 ]
 
 _NAV_FOOTER = [
@@ -131,6 +133,11 @@ class Sidebar(QWidget):
     ssh_add_requested         = Signal()
     ssh_edit_requested        = Signal(str)        # conn_id
     ssh_delete_requested      = Signal(str)        # conn_id
+    workflows_open_requested  = Signal()
+    workflow_run_requested    = Signal(str)        # workflow_id
+    workflow_add_requested    = Signal()
+    workflow_edit_requested   = Signal(str)        # workflow_id
+    workflow_delete_requested = Signal(str)        # workflow_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -149,12 +156,13 @@ class Sidebar(QWidget):
         layout.setSpacing(0)
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._build_nav_page())        # 0
-        self._stack.addWidget(self._build_history_page())   # 1
-        self._stack.addWidget(self._build_themes_page())    # 2
-        self._stack.addWidget(self._build_favorites_page()) # 3
-        self._stack.addWidget(self._build_projects_page())  # 4
-        self._stack.addWidget(self._build_ssh_page())       # 5
+        self._stack.addWidget(self._build_nav_page())         # 0
+        self._stack.addWidget(self._build_history_page())    # 1
+        self._stack.addWidget(self._build_themes_page())     # 2
+        self._stack.addWidget(self._build_favorites_page())  # 3
+        self._stack.addWidget(self._build_projects_page())   # 4
+        self._stack.addWidget(self._build_ssh_page())        # 5
+        self._stack.addWidget(self._build_workflows_page())  # 6
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
@@ -203,6 +211,8 @@ class Sidebar(QWidget):
                 btn.clicked.connect(self._open_projects)
             elif label == "SSH":
                 btn.clicked.connect(self._open_ssh)
+            elif label == "Workflows":
+                btn.clicked.connect(self._open_workflows)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -442,6 +452,67 @@ class Sidebar(QWidget):
 
         return page
 
+    def _build_workflows_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+
+        header_widget = QWidget()
+        header_widget.setStyleSheet("QWidget { background: transparent; }")
+        h_layout = QHBoxLayout(header_widget)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(4)
+
+        back_btn = QPushButton("←")
+        back_btn.setFixedSize(24, 24)
+        back_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+
+        title_lbl = QLabel("Workflows")
+        title_lbl.setStyleSheet(
+            "color: #cdd6f4; font-size: 10pt; font-weight: bold; background: transparent;"
+        )
+
+        self._wf_add_btn = QPushButton("+")
+        self._wf_add_btn.setFixedSize(22, 22)
+        self._wf_add_btn.setToolTip("New workflow")
+        self._wf_add_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 14pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        self._wf_add_btn.clicked.connect(self.workflow_add_requested)
+
+        h_layout.addWidget(back_btn)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        h_layout.addWidget(self._wf_add_btn)
+        layout.addWidget(header_widget)
+
+        self._wf_sep = QFrame()
+        self._wf_sep.setFrameShape(QFrame.HLine)
+        layout.addWidget(self._wf_sep)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._wf_list = QWidget()
+        self._wf_list.setStyleSheet("QWidget { background: transparent; }")
+        self._wf_list_layout = QVBoxLayout(self._wf_list)
+        self._wf_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._wf_list_layout.setSpacing(4)
+
+        scroll.setWidget(self._wf_list)
+        layout.addWidget(scroll)
+        self._wf_scroll = scroll
+
+        return page
+
     def _build_sub_header(self, title: str, back_fn) -> QWidget:
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
@@ -512,6 +583,7 @@ class Sidebar(QWidget):
         self._favs_sep.setStyleSheet(sep_style)
         self._projs_sep.setStyleSheet(sep_style)
         self._ssh_sep.setStyleSheet(sep_style)
+        self._wf_sep.setStyleSheet(sep_style)
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
@@ -615,6 +687,15 @@ class Sidebar(QWidget):
             return
         self._stack.setCurrentIndex(5)
         self.ssh_open_requested.emit()
+
+    def _open_workflows(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(6))
+            self.workflows_open_requested.emit()
+            return
+        self._stack.setCurrentIndex(6)
+        self.workflows_open_requested.emit()
 
     @staticmethod
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:
@@ -965,6 +1046,71 @@ class Sidebar(QWidget):
             lambda pos, c=conn: self._show_ssh_menu(c)
         )
         return row
+
+    def show_workflows(self, workflows: list[Workflow]) -> None:
+        p = ThemeManager.instance().current
+        new_list, new_layout = self._make_list_widget(spacing=4)
+        if not workflows:
+            empty = QLabel("No workflows yet\nUse + to create one")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setWordWrap(True)
+            empty.setStyleSheet(
+                f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
+            )
+            new_layout.addWidget(empty)
+        else:
+            for wf in workflows:
+                new_layout.addWidget(self._build_workflow_row(wf, p))
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._wf_scroll, new_list, 52, len(workflows))
+        self._wf_list = new_list
+        self._wf_list_layout = new_layout
+
+    def _build_workflow_row(self, wf: Workflow, p: Palette) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        name_btn = QPushButton(wf.name)
+        name_btn.setFixedHeight(22)
+        name_btn.setToolTip(wf.description or wf.name)
+        name_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
+            f" font-size: 9pt; font-weight: bold; text-align: left; padding: 0 4px; }}"
+            f"QPushButton:hover {{ color: {p.green}; }}"
+        )
+        name_btn.clicked.connect(
+            lambda checked, wid=wf.id: self.workflow_run_requested.emit(wid)
+        )
+        layout.addWidget(name_btn)
+
+        steps_lbl = QLabel(f"{len(wf.steps)} step{'s' if len(wf.steps) != 1 else ''}")
+        steps_lbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-size: 8pt; background: transparent; padding: 0 4px;"
+        )
+        layout.addWidget(steps_lbl)
+
+        row.setContextMenuPolicy(Qt.CustomContextMenu)
+        row.customContextMenuRequested.connect(
+            lambda pos, w=wf: self._show_workflow_menu(w)
+        )
+        return row
+
+    def _show_workflow_menu(self, wf: Workflow) -> None:
+        p = ThemeManager.instance().current
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 6px; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
+        )
+        menu.addAction("Run",    lambda: self.workflow_run_requested.emit(wf.id))
+        menu.addAction("Edit",   lambda: self.workflow_edit_requested.emit(wf.id))
+        menu.addAction("Delete", lambda: self.workflow_delete_requested.emit(wf.id))
+        menu.exec(self.cursor().pos())
 
     def _show_ssh_menu(self, conn: SshConnection) -> None:
         p = ThemeManager.instance().current
