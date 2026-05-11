@@ -283,9 +283,10 @@ class CommandBlock(QWidget):
                 f"QFrame {{ background: {p.bg_overlay}; border-radius: 4px; border: none; }}"
             )
             if self._explanation_label:
+                _fs = SettingsService.instance().get().font_size_output or 11
                 self._explanation_label.setStyleSheet(
                     f"QTextEdit {{ background: transparent; border: none;"
-                    f" color: {p.fg}; font-size: 9pt; }}"
+                    f" color: {p.fg}; font-size: {_fs}pt; }}"
                 )
 
     def _build_ui(self):
@@ -403,7 +404,7 @@ class CommandBlock(QWidget):
     def _build_output(self, text: str) -> _OutputEdit:
         p = ThemeManager.instance().current
         _s = SettingsService.instance().get()
-        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 9)
+        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 11)
         out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
@@ -511,7 +512,7 @@ class CommandBlock(QWidget):
     def _build_output_empty(self) -> _OutputEdit:
         p = ThemeManager.instance().current
         _s = SettingsService.instance().get()
-        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 9)
+        font = QFont(_s.font_family or "Monospace", _s.font_size_output or 11)
         out = _OutputEdit()
         out.setReadOnly(True)
         out.setFont(font)
@@ -629,9 +630,10 @@ class CommandBlock(QWidget):
             edit.setContentsMargins(0, 0, 0, 0)
             edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            _fs = SettingsService.instance().get().font_size_output or 11
             edit.setStyleSheet(
                 f"QTextEdit {{ background: transparent; border: none;"
-                f" color: {p.fg}; font-size: 9pt; }}"
+                f" color: {p.fg}; font-size: {_fs}pt; }}"
             )
             inner.addWidget(edit)
             self._explanation_label = edit
