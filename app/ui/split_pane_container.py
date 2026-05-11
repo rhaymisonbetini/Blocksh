@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QSplitter, QFrame
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QSplitter
 from PySide6.QtCore import Qt, Signal
 
 from .terminal_panel import TerminalPanel
@@ -12,7 +12,7 @@ from .theme import ThemeManager
 class SplitPaneContainer(QWidget):
     """Manages one or more TerminalPanel instances in a splitter tree."""
 
-    cwd_changed       = Signal(str)
+    cwd_changed        = Signal(str)
     favorite_requested = Signal(str, str, str)
     env_file_detected  = Signal(str, str)
 
@@ -31,7 +31,6 @@ class SplitPaneContainer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # The root widget is either a TerminalPanel (no split) or a QSplitter
         self._root_splitter = QSplitter(Qt.Horizontal)
         self._root_splitter.setHandleWidth(3)
         self._root_splitter.setChildrenCollapsible(False)
@@ -42,65 +41,97 @@ class SplitPaneContainer(QWidget):
         self._set_active(first)
         self._apply_splitter_style()
 
-        _tm = ThemeManager.instance()
-        _tm.theme_changed.connect(lambda p: self._apply_splitter_style())
+        ThemeManager.instance().theme_changed.connect(lambda p: self._apply_splitter_style())
+
+    # ── panel factory ─────────────────────────────────────────────────────────
 
     def _make_panel(self) -> TerminalPanel:
         panel = TerminalPanel(self._executor, self._repository)
         panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd(cwd, p))
         panel.favorite_requested.connect(self.favorite_requested)
         panel.env_file_detected.connect(self.env_file_detected)
-        panel.installEventFilter(self)
-        # Click on input bar or panel body → make active
-        panel._input_bar.installEventFilter(self)
+        panel.focused.connect(lambda p=panel: self._on_panel_focused(p))
         return panel
 
-    def eventFilter(self, obj, event) -> bool:
-        from PySide6.QtCore import QEvent
-        if event.type() in (QEvent.MouseButtonPress, QEvent.FocusIn):
-            panel = self._panel_for_child(obj)
-            if panel and panel is not self._active:
-                self._set_active(panel)
-        return False
+    def _on_panel_focused(self, panel: TerminalPanel) -> None:
+        if panel is not self._active:
+            self._set_active(panel)
 
-    def _panel_for_child(self, obj) -> TerminalPanel | None:
-        for panel in self._all_panels():
-            if obj is panel or obj is panel._input_bar:
-                return panel
-        return None
-
-    def _all_panels(self) -> list[TerminalPanel]:
-        result = []
-        def _collect(widget):
-            if isinstance(widget, TerminalPanel):
-                result.append(widget)
-            elif isinstance(widget, QSplitter):
-                for i in range(widget.count()):
-                    _collect(widget.widget(i))
-        _collect(self._root_splitter)
-        return result
+    def _on_panel_cwd(self, cwd: str, panel: TerminalPanel) -> None:
+        if panel is self._active:
+            self.cwd_changed.emit(cwd)
 
     def _set_active(self, panel: TerminalPanel) -> None:
         old = self._active
         self._active = panel
         p = ThemeManager.instance().current
         if old and old is not panel:
-            old.setStyleSheet(f"TerminalPanel {{ border: none; }}")
+            old.setStyleSheet("")
         panel.setStyleSheet(
-            f"TerminalPanel {{ border: 1px solid {p.blue}; border-radius: 0px; }}"
+            f"TerminalPanel {{ border: 1px solid {p.blue}; }}"
         )
         self.cwd_changed.emit(panel.cwd_display)
 
-    def _on_panel_cwd(self, cwd: str, panel: TerminalPanel) -> None:
-        if panel is self._active:
-            self.cwd_changed.emit(cwd)
-
     def _apply_splitter_style(self) -> None:
         p = ThemeManager.instance().current
-        self._root_splitter.setStyleSheet(
+        style = (
             f"QSplitter::handle {{ background: {p.bg_overlay}; }}"
             f"QSplitter::handle:hover {{ background: {p.blue}; }}"
         )
+        self._root_splitter.setStyleSheet(style)
+        for splitter in self._all_splitters():
+            splitter.setStyleSheet(style)
+
+    def _all_splitters(self) -> list[QSplitter]:
+        result: list[QSplitter] = []
+        def _collect(w: QWidget) -> None:
+            if isinstance(w, QSplitter):
+                result.append(w)
+                for i in range(w.count()):
+                    _collect(w.widget(i))
+        _collect(self._root_splitter)
+        return result
+
+    # ── tree helpers ──────────────────────────────────────────────────────────
+
+    def _all_panels(self) -> list[TerminalPanel]:
+        result: list[TerminalPanel] = []
+        def _collect(w: QWidget) -> None:
+            if isinstance(w, TerminalPanel):
+                result.append(w)
+            elif isinstance(w, QSplitter):
+                for i in range(w.count()):
+                    _collect(w.widget(i))
+        _collect(self._root_splitter)
+        return result
+
+    def _find_parent(
+        self, panel: TerminalPanel, splitter: QSplitter
+    ) -> tuple[QSplitter | None, int]:
+        for i in range(splitter.count()):
+            w = splitter.widget(i)
+            if w is panel:
+                return splitter, i
+            if isinstance(w, QSplitter):
+                result = self._find_parent(panel, w)
+                if result[0] is not None:
+                    return result
+        return None, -1
+
+    def _find_parent_splitter(
+        self, target: QSplitter
+    ) -> tuple[QSplitter | None, int]:
+        def _search(s: QSplitter) -> tuple[QSplitter | None, int]:
+            for i in range(s.count()):
+                w = s.widget(i)
+                if w is target:
+                    return s, i
+                if isinstance(w, QSplitter):
+                    result = _search(w)
+                    if result[0] is not None:
+                        return result
+            return None, -1
+        return _search(self._root_splitter)
 
     # ── split actions ─────────────────────────────────────────────────────────
 
@@ -113,56 +144,46 @@ class SplitPaneContainer(QWidget):
     def _split(self, orientation: Qt.Orientation) -> None:
         if self._active is None:
             return
-        # Find which splitter directly contains the active panel
         parent_splitter, idx = self._find_parent(self._active, self._root_splitter)
         if parent_splitter is None:
             return
 
+        new_panel = self._make_panel()
+
         if parent_splitter.orientation() == orientation:
-            # Just add a new pane at idx+1 in the same splitter
-            new_panel = self._make_panel()
             parent_splitter.insertWidget(idx + 1, new_panel)
-            # Re-distribute sizes equally
             total = sum(parent_splitter.sizes())
             n = parent_splitter.count()
             parent_splitter.setSizes([total // n] * n)
         else:
-            # Need a sub-splitter with the new orientation
-            sub = QSplitter(orientation)
-            sub.setHandleWidth(3)
-            sub.setChildrenCollapsible(False)
-            sub.setStyleSheet(self._root_splitter.styleSheet())
-
-            # Remove the active panel from its current position
+            sub = self._make_splitter(orientation)
             sizes = parent_splitter.sizes()
-            old_size = sizes[idx]
-            # Temporarily re-parent the active panel to sub
+            old_size = sizes[idx] if idx < len(sizes) else 200
+
             self._active.setParent(None)
-            new_panel = self._make_panel()
             sub.addWidget(self._active)
             sub.addWidget(new_panel)
-            sub.setSizes([old_size // 2, old_size // 2])
-            # Insert sub-splitter where the panel was
+            sub.setSizes([old_size // 2, old_size - old_size // 2])
             parent_splitter.insertWidget(idx, sub)
             parent_splitter.setSizes(sizes)
 
-        new_panel = self._all_panels()[-1]
         self._set_active(new_panel)
         new_panel.focus_input()
 
-    def _find_parent(self, panel: TerminalPanel, splitter: QSplitter):
-        for i in range(splitter.count()):
-            w = splitter.widget(i)
-            if w is panel:
-                return splitter, i
-            if isinstance(w, QSplitter):
-                result = self._find_parent(panel, w)
-                if result[0] is not None:
-                    return result
-        return None, -1
+    def _make_splitter(self, orientation: Qt.Orientation) -> QSplitter:
+        s = QSplitter(orientation)
+        s.setHandleWidth(3)
+        s.setChildrenCollapsible(False)
+        p = ThemeManager.instance().current
+        s.setStyleSheet(
+            f"QSplitter::handle {{ background: {p.bg_overlay}; }}"
+            f"QSplitter::handle:hover {{ background: {p.blue}; }}"
+        )
+        return s
+
+    # ── close pane ────────────────────────────────────────────────────────────
 
     def close_active_pane(self) -> None:
-        """Close the active pane if more than one exists."""
         panels = self._all_panels()
         if len(panels) <= 1:
             return
@@ -170,13 +191,38 @@ class SplitPaneContainer(QWidget):
         parent_splitter, idx = self._find_parent(panel, self._root_splitter)
         if parent_splitter is None:
             return
+
+        # Synchronously remove from splitter — setParent(None) is immediate
+        panel.setParent(None)
         panel.deleteLater()
-        # If parent splitter is now empty or has 1 widget, collapse it
-        # Pick a new active panel
-        remaining = [p for p in self._all_panels() if p is not panel]
+
+        # Collapse parent splitter if it now has only 1 child
+        self._collapse_if_single(parent_splitter)
+
+        remaining = self._all_panels()
         if remaining:
-            self._set_active(remaining[max(0, idx - 1)])
+            new_idx = min(max(0, idx - 1), len(remaining) - 1)
+            self._set_active(remaining[new_idx])
             self._active.focus_input()
+
+    def _collapse_if_single(self, splitter: QSplitter) -> None:
+        """Replace a sub-splitter containing 1 child with that child directly."""
+        if splitter is self._root_splitter or splitter.count() != 1:
+            return
+        child = splitter.widget(0)
+        parent, idx = self._find_parent_splitter(splitter)
+        if parent is None:
+            return
+        sizes = parent.sizes()
+        slot_size = sizes[idx] if idx < len(sizes) else 200
+        child.setParent(None)
+        parent.insertWidget(idx, child)
+        new_sizes = parent.sizes()
+        if idx < len(new_sizes):
+            new_sizes[idx] = slot_size
+            parent.setSizes(new_sizes)
+        splitter.setParent(None)
+        splitter.deleteLater()
 
     # ── delegated API (matches TerminalPanel interface) ───────────────────────
 
