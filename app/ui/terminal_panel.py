@@ -471,7 +471,12 @@ class TerminalPanel(QWidget):
         self._agent_worker = worker
 
         def _on_tool(tool: str, arg: str) -> None:
-            icons = {"READ": "📄", "LIST": "📂", "RUN": "⚙", "ASK": "💬"}
+            icons = {
+                "read_file":   "📄",
+                "list_dir":    "📂",
+                "run_command": "⚙",
+                "ask_user":    "💬",
+            }
             bw.append_output(f"{icons.get(tool, '🔧')} {tool}: {arg}\n")
 
         def _on_tool_result(tool: str, arg: str, preview: str) -> None:
