@@ -833,7 +833,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: 11pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, f=fav: self._show_favorite_menu(f))
@@ -963,7 +963,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: 11pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, pr=proj: self._show_project_menu(pr))
@@ -1113,7 +1113,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: 11pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, c=conn: self._show_ssh_menu(c))
@@ -1180,7 +1180,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: 11pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, w=wf: self._show_workflow_menu(w))
