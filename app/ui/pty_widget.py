@@ -487,7 +487,8 @@ class PtyWidget(QWidget):
 
     def show_exit_banner(self, exit_code: int) -> None:
         if self._process:
-            msg = f"\r\n\x1b[33m[Connection closed — exit {exit_code}]\x1b[0m\r\n"
+            color = "\x1b[32m" if exit_code == 0 else "\x1b[33m"
+            msg = f"\r\n{color}[Session ended — exit {exit_code}]\x1b[0m\r\n"
             self._process._stream.feed(msg.encode())
             self._canvas.update()
 

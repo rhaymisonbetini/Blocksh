@@ -305,7 +305,7 @@ class TerminalPanel(QWidget):
             self._pty_widget.setGeometry(self.rect())
 
     def _on_pty_finished(self, exit_code: int, final_text: str) -> None:
-        if self._pty_widget and exit_code != 0:
+        if self._pty_widget:
             self._pty_widget.show_exit_banner(exit_code)
             QTimer.singleShot(1500, lambda: self._destroy_pty(exit_code, final_text))
             return
