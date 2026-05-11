@@ -2,6 +2,13 @@ import re
 from PySide6.QtGui import QTextCharFormat, QFont, QColor
 from .ansi_colors import _resolve_color
 
+# ── link detection regexes ────────────────────────────────────────────────
+
+_URL_RE   = re.compile(r'https?://[^\s\'"<>\]]+')
+_FILE_LINE_RE = re.compile(r'(/[^\s:\'"\)\]]+):(\d+)')
+_FILE_RE  = re.compile(r'(?<!["\'])(/[^\s:\'"\)\]]+)(?::(\d+))?')
+_PY_TB_RE = re.compile(r'File "([^"]+)", line (\d+)')
+
 _ESCAPE_RE = re.compile(
     r'\x1b(?:'
     r'\][^\x07\x1b]*(?:\x07|\x1b\\)'   # OSC: ESC ] ... BEL or ST — consume silently
@@ -118,3 +125,72 @@ def render_ansi(text: str) -> list[tuple[str, QTextCharFormat]]:
         result.append((remaining, QTextCharFormat(current_fmt)))
 
     return result
+
+
+def render_ansi_with_links(
+    text: str,
+) -> list[tuple[str, QTextCharFormat]]:
+    """Like render_ansi() but also detects URLs and file paths and marks them
+    as clickable anchors by setting setAnchor/setAnchorHref on the format."""
+    base_segments = render_ansi(text)
+    result: list[tuple[str, QTextCharFormat]] = []
+    for seg_text, seg_fmt in base_segments:
+        result.extend(_inject_links(seg_text, seg_fmt))
+    return result
+
+
+def _inject_links(
+    text: str, base_fmt: QTextCharFormat
+) -> list[tuple[str, QTextCharFormat]]:
+    """Scan text for URLs and file paths; return segments with link formatting."""
+    # Collect all matches with their hrefs, sorted by start position
+    spans: list[tuple[int, int, str]] = []  # (start, end, href)
+
+    # Python traceback: File "path", line N — highest priority
+    for m in _PY_TB_RE.finditer(text):
+        path = m.group(1)
+        line = int(m.group(2))
+        href = f"file://{path}?line={line}"
+        spans.append((m.start(), m.end(), href))
+
+    # HTTP URLs
+    for m in _URL_RE.finditer(text):
+        if not _overlaps(spans, m.start(), m.end()):
+            spans.append((m.start(), m.end(), m.group()))
+
+    # Absolute file paths with optional :line
+    for m in _FILE_LINE_RE.finditer(text):
+        if not _overlaps(spans, m.start(), m.end()):
+            path = m.group(1)
+            line = int(m.group(2))
+            href = f"file://{path}?line={line}"
+            spans.append((m.start(), m.end(), href))
+
+    for m in _FILE_RE.finditer(text):
+        if not _overlaps(spans, m.start(), m.end()):
+            path = m.group(1)
+            href = f"file://{path}"
+            spans.append((m.start(), m.end(), href))
+
+    if not spans:
+        return [(text, base_fmt)]
+
+    spans.sort(key=lambda x: x[0])
+    result: list[tuple[str, QTextCharFormat]] = []
+    pos = 0
+    for start, end, href in spans:
+        if pos < start:
+            result.append((text[pos:start], QTextCharFormat(base_fmt)))
+        link_fmt = QTextCharFormat(base_fmt)
+        link_fmt.setAnchor(True)
+        link_fmt.setAnchorHref(href)
+        link_fmt.setUnderlineStyle(QTextCharFormat.SingleUnderline)
+        result.append((text[start:end], link_fmt))
+        pos = end
+    if pos < len(text):
+        result.append((text[pos:], QTextCharFormat(base_fmt)))
+    return result
+
+
+def _overlaps(spans: list[tuple[int, int, str]], start: int, end: int) -> bool:
+    return any(s < end and e > start for s, e, _ in spans)
