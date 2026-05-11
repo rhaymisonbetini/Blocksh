@@ -44,6 +44,34 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             created_at    TEXT NOT NULL,
             last_accessed TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS ssh_connections (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            host       TEXT NOT NULL,
+            user       TEXT NOT NULL,
+            port       INTEGER NOT NULL DEFAULT 22,
+            key_path   TEXT NOT NULL DEFAULT '',
+            group_name TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            last_used  TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS workflows (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL,
+            last_run    TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS workflow_steps (
+            id               TEXT PRIMARY KEY,
+            workflow_id      TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            command_template TEXT NOT NULL,
+            on_error         TEXT NOT NULL DEFAULT 'stop',
+            step_order       INTEGER NOT NULL
+        );
     """)
     conn.commit()
 

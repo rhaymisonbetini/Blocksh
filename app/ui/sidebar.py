@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, Signal, QEasingCurve, QPropertyAnimation
 from ..domain.block import Block
 from ..domain.favorite import Favorite
 from ..domain.project import Project
+from ..domain.ssh_connection import SshConnection
 from .theme import Palette, ThemeManager
 
 _TYPE_COLORS: dict[str, str] = {
@@ -43,6 +44,7 @@ _NAV_MAIN = [
     ("≡",  "History",    False),
     ("◇",  "Favorites",  False),
     ("⊞",  "Projects",   False),
+    ("⌁",  "SSH",        False),
 ]
 
 _NAV_FOOTER = [
@@ -124,6 +126,11 @@ class Sidebar(QWidget):
     project_delete_requested  = Signal(str)        # id
     settings_requested        = Signal()
     terminal_requested        = Signal()
+    ssh_open_requested        = Signal()
+    ssh_connect_requested     = Signal(str)        # conn_id
+    ssh_add_requested         = Signal()
+    ssh_edit_requested        = Signal(str)        # conn_id
+    ssh_delete_requested      = Signal(str)        # conn_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -147,6 +154,7 @@ class Sidebar(QWidget):
         self._stack.addWidget(self._build_themes_page())    # 2
         self._stack.addWidget(self._build_favorites_page()) # 3
         self._stack.addWidget(self._build_projects_page())  # 4
+        self._stack.addWidget(self._build_ssh_page())       # 5
         layout.addWidget(self._stack)
 
     def _build_nav_page(self) -> QWidget:
@@ -193,6 +201,8 @@ class Sidebar(QWidget):
                 btn.clicked.connect(self._open_favorites)
             elif label == "Projects":
                 btn.clicked.connect(self._open_projects)
+            elif label == "SSH":
+                btn.clicked.connect(self._open_ssh)
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -371,6 +381,67 @@ class Sidebar(QWidget):
 
         return page
 
+    def _build_ssh_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 12, 8, 12)
+        layout.setSpacing(6)
+
+        header_widget = QWidget()
+        header_widget.setStyleSheet("QWidget { background: transparent; }")
+        h_layout = QHBoxLayout(header_widget)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(4)
+
+        back_btn = QPushButton("←")
+        back_btn.setFixedSize(24, 24)
+        back_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+
+        title_lbl = QLabel("SSH")
+        title_lbl.setStyleSheet(
+            "color: #cdd6f4; font-size: 10pt; font-weight: bold; background: transparent;"
+        )
+
+        self._ssh_add_btn = QPushButton("+")
+        self._ssh_add_btn.setFixedSize(22, 22)
+        self._ssh_add_btn.setToolTip("Add SSH connection")
+        self._ssh_add_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 14pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        self._ssh_add_btn.clicked.connect(self.ssh_add_requested)
+
+        h_layout.addWidget(back_btn)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        h_layout.addWidget(self._ssh_add_btn)
+        layout.addWidget(header_widget)
+
+        self._ssh_sep = QFrame()
+        self._ssh_sep.setFrameShape(QFrame.HLine)
+        layout.addWidget(self._ssh_sep)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._ssh_list = QWidget()
+        self._ssh_list.setStyleSheet("QWidget { background: transparent; }")
+        self._ssh_list_layout = QVBoxLayout(self._ssh_list)
+        self._ssh_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._ssh_list_layout.setSpacing(4)
+
+        scroll.setWidget(self._ssh_list)
+        layout.addWidget(scroll)
+        self._ssh_scroll = scroll
+
+        return page
+
     def _build_sub_header(self, title: str, back_fn) -> QWidget:
         header = QWidget()
         header.setStyleSheet("QWidget { background: transparent; }")
@@ -440,6 +511,7 @@ class Sidebar(QWidget):
         self._themes_sep.setStyleSheet(sep_style)
         self._favs_sep.setStyleSheet(sep_style)
         self._projs_sep.setStyleSheet(sep_style)
+        self._ssh_sep.setStyleSheet(sep_style)
         self._os_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
         self._user_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent;")
         self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: 8pt; background: transparent;")
@@ -534,6 +606,15 @@ class Sidebar(QWidget):
 
     def _open_settings(self) -> None:
         self.settings_requested.emit()
+
+    def _open_ssh(self) -> None:
+        if self._collapsed:
+            self._set_collapsed(False)
+            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(5))
+            self.ssh_open_requested.emit()
+            return
+        self._stack.setCurrentIndex(5)
+        self.ssh_open_requested.emit()
 
     @staticmethod
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:
@@ -820,3 +901,81 @@ class Sidebar(QWidget):
 
     def update_cwd(self, display_path: str) -> None:
         self._cwd_label.setText(display_path)
+
+    def show_ssh_connections(self, connections: list[SshConnection]) -> None:
+        p = ThemeManager.instance().current
+        new_list, new_layout = self._make_list_widget(spacing=4)
+        if not connections:
+            empty = QLabel("No SSH connections\nUse + to add one")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setWordWrap(True)
+            empty.setStyleSheet(
+                f"color: {p.fg_dim}; font-size: 8pt; background: transparent; padding: 16px 8px;"
+            )
+            new_layout.addWidget(empty)
+        else:
+            groups: dict[str, list[SshConnection]] = {}
+            for conn in connections:
+                key = conn.group or ""
+                groups.setdefault(key, []).append(conn)
+            for group_name in sorted(groups.keys()):
+                if group_name:
+                    grp_lbl = QLabel(group_name)
+                    grp_lbl.setStyleSheet(
+                        f"color: {p.fg_muted}; font-size: 8pt; font-weight: bold;"
+                        f" background: transparent; padding: 4px 4px 2px 4px;"
+                    )
+                    new_layout.addWidget(grp_lbl)
+                for conn in groups[group_name]:
+                    new_layout.addWidget(self._build_ssh_row(conn, p))
+        new_layout.addStretch()
+        self._swap_scroll_widget(self._ssh_scroll, new_list, 52, len(connections))
+        self._ssh_list = new_list
+        self._ssh_list_layout = new_layout
+
+    def _build_ssh_row(self, conn: SshConnection, p: Palette) -> QWidget:
+        row = QWidget()
+        row.setStyleSheet("QWidget { background: transparent; }")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(2)
+
+        name_btn = QPushButton(conn.name)
+        name_btn.setFixedHeight(22)
+        name_btn.setToolTip(conn.to_command())
+        name_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
+            f" font-size: 9pt; font-weight: bold; text-align: left; padding: 0 4px; }}"
+            f"QPushButton:hover {{ color: {p.blue}; }}"
+        )
+        name_btn.clicked.connect(
+            lambda checked, cid=conn.id: self.ssh_connect_requested.emit(cid)
+        )
+        layout.addWidget(name_btn)
+
+        host_lbl = QLabel(f"{conn.user}@{conn.host}:{conn.port}")
+        host_lbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-family: Monospace; font-size: 8pt;"
+            f" background: transparent; padding: 0 4px;"
+        )
+        layout.addWidget(host_lbl)
+
+        row.setContextMenuPolicy(Qt.CustomContextMenu)
+        row.customContextMenuRequested.connect(
+            lambda pos, c=conn: self._show_ssh_menu(c)
+        )
+        return row
+
+    def _show_ssh_menu(self, conn: SshConnection) -> None:
+        p = ThemeManager.instance().current
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
+            f" border-radius: 6px; padding: 4px; }}"
+            f"QMenu::item {{ padding: 6px 16px; border-radius: 4px; }}"
+            f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
+        )
+        menu.addAction("Connect", lambda: self.ssh_connect_requested.emit(conn.id))
+        menu.addAction("Edit",    lambda: self.ssh_edit_requested.emit(conn.id))
+        menu.addAction("Delete",  lambda: self.ssh_delete_requested.emit(conn.id))
+        menu.exec(self.cursor().pos())
