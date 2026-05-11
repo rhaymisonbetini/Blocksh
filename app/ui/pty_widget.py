@@ -111,6 +111,10 @@ class _PtyCanvas(QWidget):
 
     def paintEvent(self, _event) -> None:
         if self._screen is None:
+            # PTY not yet started — paint background so no garbage shows
+            p = QPainter(self)
+            p.fillRect(self.rect(), self._color_bg)
+            p.end()
             return
 
         # #38/#39: acquire lock to prevent races with PtyProcess.run() feeding pyte
@@ -302,6 +306,9 @@ class PtyWidget(QWidget):
         self._process.screen_ready.connect(self._on_screen_ready)
         self._process.process_finished.connect(self._on_process_finished)
         self._process.start_process()
+        # Force immediate render so the user sees the terminal background
+        # and cursor right away, rather than a black frame until first data arrives.
+        self._canvas.update()
 
     def _calc_dimensions(self) -> tuple[int, int]:
         w = max(1, self._canvas.width()  or self.width())
