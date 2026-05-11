@@ -10,6 +10,7 @@ from .tab_bar import TabBar
 from .terminal_panel import TerminalPanel
 from .theme import Palette, ThemeManager
 from .settings_panel import SettingsPanel
+from .command_palette import CommandPalette
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
 from ..services.favorites_service import FavoritesService
@@ -109,6 +110,12 @@ class MainWindow(QMainWindow):
         self.apply_theme(_tm.current)
         _tm.theme_changed.connect(self.apply_theme)
 
+        # Command palette (floating, parented to this window)
+        self._palette = CommandPalette(self._repository, self._favorites_service, self)
+        self._palette.command_selected.connect(self._on_palette_command_selected)
+        self._palette.command_executed.connect(self._on_palette_command_executed)
+        self._palette.hide()
+
     def _build_settings_view(self) -> QWidget:
         p = ThemeManager.instance().current
         page = QWidget()
@@ -177,6 +184,7 @@ class MainWindow(QMainWindow):
         )
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search)
         QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._clear_active)
+        QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._toggle_palette)
         QShortcut(QKeySequence("Escape"), self).activated.connect(self._esc_settings)
 
     # ── settings navigation ───────────────────────────────────────────────────
@@ -361,3 +369,32 @@ class MainWindow(QMainWindow):
     def _on_project_delete(self, project_id: str) -> None:
         self._project_service.remove(project_id)
         self._load_projects()
+
+    # ── command palette ───────────────────────────────────────────────────
+
+    def _toggle_palette(self) -> None:
+        if self._palette.isVisible():
+            self._palette.hide()
+        else:
+            pw = min(640, self.width() - 80)
+            ph = min(480, self.height() - 80)
+            self._palette.resize(pw, ph)
+            self._palette.move(
+                self.x() + (self.width() - pw) // 2,
+                self.y() + (self.height() - ph) // 3,
+            )
+            self._palette.show()
+            self._palette.raise_()
+            self._palette.focus_input()
+
+    def _on_palette_command_selected(self, text: str) -> None:
+        if self._panels:
+            self._panels[self._active_index].set_input_text(text)
+            self._panels[self._active_index].focus_input()
+
+    def _on_palette_command_executed(self, text: str) -> None:
+        if self._panels:
+            panel = self._panels[self._active_index]
+            panel.set_input_text(text)
+            panel.focus_input()
+            panel._on_command(text)

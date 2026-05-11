@@ -46,6 +46,18 @@ class HistoryRepository:
         ).fetchall()
         return [self._row_to_block(r) for r in reversed(rows)]
 
+    def search(self, query: str, limit: int = 50) -> list[Block]:
+        """Full-text search across command_text using LIKE. Returns newest first."""
+        pattern = f"%{query}%"
+        rows = self._conn.execute(
+            """SELECT * FROM blocks
+               WHERE command_text LIKE ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (pattern, limit),
+        ).fetchall()
+        return [self._row_to_block(r) for r in rows]
+
     def clear_all(self) -> None:
         self._conn.execute("DELETE FROM blocks")
         self._conn.execute("DELETE FROM sessions")
