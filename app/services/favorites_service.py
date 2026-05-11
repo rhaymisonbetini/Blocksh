@@ -19,3 +19,6 @@ class FavoritesService:
 
     def rename(self, fav_id: str, name: str) -> None:
         self._repo.rename(fav_id, name)
+
+    def update(self, fav_id: str, name: str, command_text: str, cwd: str) -> None:
+        self._repo.update(fav_id, name, command_text, cwd)

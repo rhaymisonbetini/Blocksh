@@ -119,8 +119,10 @@ class Sidebar(QWidget):
     theme_selected            = Signal(str)
     favorites_open_requested  = Signal()
     favorite_command_selected = Signal(str)
-    favorite_rename_requested = Signal(str, str)  # id, new_name
-    favorite_delete_requested = Signal(str)        # id
+    favorite_rename_requested = Signal(str, str)         # id, new_name
+    favorite_delete_requested = Signal(str)               # id
+    favorite_edit_requested   = Signal(str, str, str, str) # id, name, command_text, cwd
+    favorite_add_requested    = Signal(str, str, str)      # name, command_text, cwd
     projects_open_requested   = Signal()
     project_selected          = Signal(str)        # path → cd <path>
     project_add_requested     = Signal()           # add current directory
@@ -304,8 +306,39 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 12, 8, 12)
         layout.setSpacing(6)
 
-        header = self._build_sub_header("Favorites", lambda: self._stack.setCurrentIndex(0))
-        layout.addWidget(header)
+        header_widget = QWidget()
+        header_widget.setStyleSheet("QWidget { background: transparent; }")
+        h_layout = QHBoxLayout(header_widget)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(4)
+
+        back_btn = QPushButton("←")
+        back_btn.setFixedSize(24, 24)
+        back_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 12pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+
+        title_lbl = QLabel("Favorites")
+        title_lbl.setStyleSheet(
+            "color: #cdd6f4; font-size: 10pt; font-weight: bold; background: transparent;"
+        )
+
+        self._favs_add_btn = QPushButton("+")
+        self._favs_add_btn.setFixedSize(22, 22)
+        self._favs_add_btn.setToolTip("Add favorite")
+        self._favs_add_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #6c7086; border: none; font-size: 14pt; }"
+            "QPushButton:hover { color: #cdd6f4; }"
+        )
+        self._favs_add_btn.clicked.connect(self._open_add_favorite)
+
+        h_layout.addWidget(back_btn)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        h_layout.addWidget(self._favs_add_btn)
+        layout.addWidget(header_widget)
 
         self._favs_sep = QFrame()
         self._favs_sep.setFrameShape(QFrame.HLine)
@@ -787,11 +820,26 @@ class Sidebar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
 
+        header_h = QHBoxLayout()
+        header_h.setContentsMargins(0, 0, 0, 0)
+        header_h.setSpacing(4)
+
         name_lbl = QLabel(fav.name)
         name_lbl.setStyleSheet(
             f"color: {p.fg}; font-size: 9pt; font-weight: bold; background: transparent;"
         )
-        layout.addWidget(name_lbl)
+        header_h.addWidget(name_lbl, 1)
+
+        menu_btn = QPushButton("⋮")
+        menu_btn.setFixedSize(20, 20)
+        menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
+        )
+        menu_btn.clicked.connect(lambda checked, f=fav: self._show_favorite_menu(f))
+        header_h.addWidget(menu_btn)
+
+        layout.addLayout(header_h)
 
         cmd_btn = QPushButton(fav.command_text)
         cmd_btn.setFixedHeight(22)
@@ -823,14 +871,29 @@ class Sidebar(QWidget):
             f"QMenu::item:selected {{ background: {p.bg_selected}; }}"
         )
 
+        def _edit():
+            from .favorite_edit_dialog import FavoriteEditDialog
+            dlg = FavoriteEditDialog(fav, parent=self)
+            if dlg.exec():
+                name, cmd, cwd = dlg.result_data()
+                self.favorite_edit_requested.emit(fav.id, name, cmd, cwd)
+
         def _rename():
             name, ok = QInputDialog.getText(self, "Rename Favorite", "New name:", text=fav.name)
             if ok and name.strip():
                 self.favorite_rename_requested.emit(fav.id, name.strip())
 
+        menu.addAction("Edit",   _edit)
         menu.addAction("Rename", _rename)
         menu.addAction("Delete", lambda: self.favorite_delete_requested.emit(fav.id))
         menu.exec(self.cursor().pos())
+
+    def _open_add_favorite(self) -> None:
+        from .favorite_edit_dialog import FavoriteEditDialog
+        dlg = FavoriteEditDialog(parent=self)
+        if dlg.exec():
+            name, cmd, cwd = dlg.result_data()
+            self.favorite_add_requested.emit(name, cmd, cwd)
 
     def show_projects(self, projects_with_history: list[tuple[Project, list[Block]]]) -> None:
         p = ThemeManager.instance().current
@@ -896,6 +959,15 @@ class Sidebar(QWidget):
             f"color: {type_color}; font-size: 7pt; background: transparent; padding: 1px 4px;"
         )
         h.addWidget(type_lbl)
+
+        menu_btn = QPushButton("⋮")
+        menu_btn.setFixedSize(20, 20)
+        menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
+        )
+        menu_btn.clicked.connect(lambda checked, pr=proj: self._show_project_menu(pr))
+        h.addWidget(menu_btn)
 
         vbox.addWidget(main_row)
 
@@ -1021,6 +1093,10 @@ class Sidebar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
 
+        header_h = QHBoxLayout()
+        header_h.setContentsMargins(0, 0, 0, 0)
+        header_h.setSpacing(4)
+
         name_btn = QPushButton(conn.name)
         name_btn.setFixedHeight(22)
         name_btn.setToolTip(conn.to_command())
@@ -1032,7 +1108,18 @@ class Sidebar(QWidget):
         name_btn.clicked.connect(
             lambda checked, cid=conn.id: self.ssh_connect_requested.emit(cid)
         )
-        layout.addWidget(name_btn)
+        header_h.addWidget(name_btn, 1)
+
+        menu_btn = QPushButton("⋮")
+        menu_btn.setFixedSize(20, 20)
+        menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
+        )
+        menu_btn.clicked.connect(lambda checked, c=conn: self._show_ssh_menu(c))
+        header_h.addWidget(menu_btn)
+
+        layout.addLayout(header_h)
 
         host_lbl = QLabel(f"{conn.user}@{conn.host}:{conn.port}")
         host_lbl.setStyleSheet(
@@ -1073,6 +1160,10 @@ class Sidebar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
 
+        header_h = QHBoxLayout()
+        header_h.setContentsMargins(0, 0, 0, 0)
+        header_h.setSpacing(4)
+
         name_btn = QPushButton(wf.name)
         name_btn.setFixedHeight(22)
         name_btn.setToolTip(wf.description or wf.name)
@@ -1084,7 +1175,18 @@ class Sidebar(QWidget):
         name_btn.clicked.connect(
             lambda checked, wid=wf.id: self.workflow_run_requested.emit(wid)
         )
-        layout.addWidget(name_btn)
+        header_h.addWidget(name_btn, 1)
+
+        menu_btn = QPushButton("⋮")
+        menu_btn.setFixedSize(20, 20)
+        menu_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 11pt; }}"
+            f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
+        )
+        menu_btn.clicked.connect(lambda checked, w=wf: self._show_workflow_menu(w))
+        header_h.addWidget(menu_btn)
+
+        layout.addLayout(header_h)
 
         steps_lbl = QLabel(f"{len(wf.steps)} step{'s' if len(wf.steps) != 1 else ''}")
         steps_lbl.setStyleSheet(
