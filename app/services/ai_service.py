@@ -100,44 +100,49 @@ class _OpenAiBackend:
 
 
 _SYSTEM_PROMPT_TEMPLATE = """\
-You are an expert terminal assistant with filesystem read access.
+You are an expert, conversational terminal assistant with full filesystem access.
+You reason step-by-step and explore thoroughly before answering.
 
 === SESSION CONTEXT ===
 Working directory: {cwd}
 
-Files and directories available right now (exact names, case-sensitive):
+Contents of the working directory right now (exact names, case-sensitive):
 {cwd_listing}
 ======================
 
-You can use the following tools. Include EXACTLY ONE per response:
+You have four tools. Use EXACTLY ONE per response, then wait for the result:
 
-  [READ: path]   — read a file (auto-approved, no confirmation)
-  [LIST: path]   — list a directory (auto-approved, no confirmation)
-  [RUN: command] — run a shell command (user must approve before it runs)
+  [READ: path]        — read a file (instant, no confirmation needed)
+  [LIST: path]        — list a directory (instant, no confirmation needed)
+  [RUN: command]      — run a shell command (user must approve first)
+  [ASK: question]     — ask the user a clarifying question and wait for their reply
 
-IMPORTANT RULES — follow these strictly:
-1. Linux paths are CASE-SENSITIVE. Use the EXACT names shown in the listing above.
-   Wrong: [LIST: App/]   Correct: [LIST: app/]
-2. Prefer RELATIVE paths from the working directory (e.g. app/main.py not /full/path/app/main.py).
-3. Always use ONE tool per response, then wait for the result before continuing.
-4. If a tool returns an error, use [LIST: .] to verify what actually exists, then retry
-   with the exact name. Never repeat a failed path.
-5. When you have enough information, give your final answer.
-6. If the answer IS a shell command the user should run, put it on its own line starting with CMD:
-   Example: CMD: grep -rn "TODO" app/
-7. Otherwise write a clear, concise answer in plain text.
-8. Never invent file contents. Always use [READ:] to see a file before talking about it."""
+CRITICAL RULES:
+1. Paths are CASE-SENSITIVE on Linux. Copy them EXACTLY from [LIST:] output — never guess.
+2. [LIST:] output already contains the FULL relative path from the working directory.
+   Example: after [LIST: app/], you see "app/main.py  (2,890 bytes)" → use [READ: app/main.py]
+   NEVER strip the directory prefix. If the listing shows "app/main.py", use "app/main.py".
+3. One tool per response. Wait for the result before continuing.
+4. If a tool returns an error: immediately do [LIST: .] to see what actually exists,
+   then retry with the exact name from that listing. Never repeat a failed path.
+5. Use [ASK:] whenever the request is ambiguous or you need more information before proceeding.
+   Example: [ASK: Which file would you like me to look at?]
+6. When you have gathered enough information, write your final answer in plain conversational text.
+   - Be thorough and explain your findings clearly.
+   - If the answer IS a shell command for the user to run, put it on its own line: CMD: <command>
+7. Never invent or guess file contents — always [READ:] a file before describing it."""
 
 
 class AgentWorker(QThread):
     tool_called       = Signal(str, str)        # tool_name, argument
     tool_result_ready = Signal(str, str, str)   # tool_name, argument, short_preview
     permission_needed = Signal(str)             # command string waiting for approval
+    ask_user          = Signal(str)             # question string waiting for user reply
     final_answer      = Signal(str)             # plain-text answer to show inline
     command_ready     = Signal(str)             # shell command → put in InputBar
     error_occurred    = Signal(str)
 
-    _MAX_TURNS      = 10
+    _MAX_TURNS      = 15
     _MAX_FILE_BYTES = 10_000
     _MAX_LIST_ITEMS = 60
     _PERM_TIMEOUT   = 120  # seconds
@@ -149,15 +154,22 @@ class AgentWorker(QThread):
         self._backend  = backend
         self._perm_event   = threading.Event()
         self._perm_granted = False
+        self._ask_event    = threading.Event()
+        self._ask_answer   = ""
         self._cancelled    = False
 
     def grant_permission(self, allowed: bool) -> None:
         self._perm_granted = allowed
         self._perm_event.set()
 
+    def answer_question(self, answer: str) -> None:
+        self._ask_answer = answer
+        self._ask_event.set()
+
     def cancel(self) -> None:
         self._cancelled = True
         self._perm_event.set()
+        self._ask_event.set()
 
     def run(self) -> None:
         try:
@@ -199,7 +211,7 @@ class AgentWorker(QThread):
                 return
 
             # Tool call?
-            tool_match = re.search(r'\[(READ|LIST|RUN):\s*(.+?)\]', response, re.IGNORECASE)
+            tool_match = re.search(r'\[(READ|LIST|RUN|ASK):\s*(.+?)\]', response, re.IGNORECASE)
             if not tool_match:
                 self.final_answer.emit(response)
                 return
@@ -235,6 +247,8 @@ class AgentWorker(QThread):
             return self._list_dir(arg)
         if tool == "RUN":
             return self._run_with_permission(arg)
+        if tool == "ASK":
+            return self._ask_with_permission(arg)
         return f"Unknown tool: {tool}"
 
     def _abs(self, path: str) -> str:
@@ -283,23 +297,39 @@ class AgentWorker(QThread):
     def _list_dir(self, path: str) -> str:
         full = self._abs(path)
         try:
+            # Prefix each entry with its path relative to cwd so the model can
+            # copy-paste names directly into [READ:] calls without stripping dirs.
+            rel_dir = os.path.relpath(full, self._cwd)
+            prefix  = "" if rel_dir == "." else rel_dir.rstrip("/") + "/"
+
             entries = sorted(os.listdir(full))[: self._MAX_LIST_ITEMS]
             lines = []
             for name in entries:
-                fp = os.path.join(full, name)
+                fp      = os.path.join(full, name)
+                display = prefix + name
                 if os.path.isdir(fp):
-                    lines.append(f"{name}/")
+                    lines.append(f"{display}/")
                 else:
                     try:
                         sz = os.path.getsize(fp)
-                        lines.append(f"{name}  ({sz:,} bytes)")
+                        lines.append(f"{display}  ({sz:,} bytes)")
                     except OSError:
-                        lines.append(name)
+                        lines.append(display)
             total = len(os.listdir(full))
             suffix = f"\n… ({total - self._MAX_LIST_ITEMS} more)" if total > self._MAX_LIST_ITEMS else ""
             return ("\n".join(lines) or "(empty directory)") + suffix
         except Exception as exc:
             return f"Error listing directory: {exc}"
+
+    def _ask_with_permission(self, question: str) -> str | None:
+        self._ask_event.clear()
+        self._ask_answer = ""
+        self.ask_user.emit(question)
+        if not self._ask_event.wait(timeout=self._PERM_TIMEOUT):
+            return "Timeout — user did not reply."
+        if self._cancelled:
+            return None
+        return self._ask_answer or "(no answer provided)"
 
     def _run_with_permission(self, command: str) -> str | None:
         self._perm_event.clear()

@@ -471,7 +471,7 @@ class TerminalPanel(QWidget):
         self._agent_worker = worker
 
         def _on_tool(tool: str, arg: str) -> None:
-            icons = {"READ": "📄", "LIST": "📂", "RUN": "⚙"}
+            icons = {"READ": "📄", "LIST": "📂", "RUN": "⚙", "ASK": "💬"}
             bw.append_output(f"{icons.get(tool, '🔧')} {tool}: {arg}\n")
 
         def _on_tool_result(tool: str, arg: str, preview: str) -> None:
@@ -479,9 +479,34 @@ class TerminalPanel(QWidget):
 
         def _on_permission(command: str) -> None:
             bw.append_output(f"⚠  Asking permission to run: {command}\n")
-            self._permission_banner.show_request(command)
-            self._permission_banner.allowed.connect(lambda: worker.grant_permission(True))
-            self._permission_banner.denied.connect(lambda: worker.grant_permission(False))
+            banner = self._permission_banner
+            banner.show_request(command)
+            # Use one-shot lambdas via a local variable to avoid signal accumulation.
+            def _allow():
+                try: banner.allowed.disconnect(_allow)
+                except RuntimeError: pass
+                try: banner.denied.disconnect(_deny)
+                except RuntimeError: pass
+                worker.grant_permission(True)
+            def _deny():
+                try: banner.allowed.disconnect(_allow)
+                except RuntimeError: pass
+                try: banner.denied.disconnect(_deny)
+                except RuntimeError: pass
+                worker.grant_permission(False)
+            banner.allowed.connect(_allow)
+            banner.denied.connect(_deny)
+
+        def _on_ask(question: str) -> None:
+            bw.append_output(f"💬 ASK: {question}\n")
+            banner = self._permission_banner
+            banner.show_question(question)
+            def _send(answer: str):
+                try: banner.answered.disconnect(_send)
+                except RuntimeError: pass
+                bw.append_output(f"   ↳ User: {answer}\n")
+                worker.answer_question(answer)
+            banner.answered.connect(_send)
 
         def _on_final(text: str) -> None:
             self._input_bar.set_thinking(False)
@@ -505,6 +530,7 @@ class TerminalPanel(QWidget):
         worker.tool_called.connect(_on_tool)
         worker.tool_result_ready.connect(_on_tool_result)
         worker.permission_needed.connect(_on_permission)
+        worker.ask_user.connect(_on_ask)
         worker.final_answer.connect(_on_final)
         worker.command_ready.connect(_on_command)
         worker.error_occurred.connect(_on_error)
