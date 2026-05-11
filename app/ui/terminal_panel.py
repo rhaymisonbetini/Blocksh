@@ -284,9 +284,12 @@ class TerminalPanel(QWidget):
         cmd_name = os.path.basename(parts[0]) if parts else ""
         direct = cmd_name in _ALWAYS_INTERACTIVE
 
-        # Overlay the PTY widget over the full panel geometry instead of
-        # inserting it into the layout — this guarantees pixel-perfect coverage
-        # with no leftover sliver from hidden siblings.
+        # Hide layout widgets so the PTY canvas has full visual ownership.
+        # _on_pty_finished() restores them with setVisible(True).
+        self._scroll.setVisible(False)
+        self._sep.setVisible(False)
+        self._input_bar.setVisible(False)
+
         self._pty_widget = PtyWidget(
             text, self._session.cwd, self._session.env, parent=self, direct=direct
         )
