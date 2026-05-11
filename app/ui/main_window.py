@@ -26,6 +26,8 @@ class MainWindow(QMainWindow):
         project_service: ProjectService,
         favorites_repo=None,
         project_repo=None,
+        ssh_service=None,
+        workflow_service=None,
     ):
         super().__init__()
         self._executor           = executor
@@ -34,6 +36,8 @@ class MainWindow(QMainWindow):
         self._project_service    = project_service
         self._favorites_repo     = favorites_repo
         self._project_repo       = project_repo
+        self._ssh_service        = ssh_service
+        self._workflow_service   = workflow_service
         self._panels: list[TerminalPanel] = []
         self._active_index  = 0
 
@@ -68,6 +72,11 @@ class MainWindow(QMainWindow):
         self._sidebar.project_add_requested.connect(self._on_project_add)
         self._sidebar.project_rename_requested.connect(self._on_project_rename)
         self._sidebar.project_delete_requested.connect(self._on_project_delete)
+        self._sidebar.ssh_open_requested.connect(self._load_ssh)
+        self._sidebar.ssh_connect_requested.connect(self._on_ssh_connect)
+        self._sidebar.ssh_add_requested.connect(self._on_ssh_add)
+        self._sidebar.ssh_edit_requested.connect(self._on_ssh_edit)
+        self._sidebar.ssh_delete_requested.connect(self._on_ssh_delete)
         root.addWidget(self._sidebar)
 
         self._v_sep = QFrame()
@@ -370,6 +379,56 @@ class MainWindow(QMainWindow):
     def _on_project_delete(self, project_id: str) -> None:
         self._project_service.remove(project_id)
         self._load_projects()
+
+    # ── SSH manager ───────────────────────────────────────────────────────
+
+    def _load_ssh(self) -> None:
+        if self._ssh_service:
+            self._sidebar.show_ssh_connections(self._ssh_service.all())
+
+    def _on_ssh_connect(self, conn_id: str) -> None:
+        if not self._ssh_service:
+            return
+        connections = self._ssh_service.all()
+        conn = next((c for c in connections if c.id == conn_id), None)
+        if not conn:
+            return
+        if self._panels:
+            self._panels[self._active_index].set_input_text(conn.to_command())
+            self._panels[self._active_index].focus_input()
+        self._ssh_service.touch(conn_id)
+
+    def _on_ssh_add(self) -> None:
+        if not self._ssh_service:
+            return
+        from .ssh_connection_dialog import SshConnectionDialog
+        dlg = SshConnectionDialog(parent=self)
+        if dlg.exec():
+            conn = dlg.result_connection()
+            self._ssh_service.add(
+                conn.name, conn.host, conn.user,
+                conn.port, conn.key_path, conn.group,
+            )
+            self._load_ssh()
+
+    def _on_ssh_edit(self, conn_id: str) -> None:
+        if not self._ssh_service:
+            return
+        connections = self._ssh_service.all()
+        conn = next((c for c in connections if c.id == conn_id), None)
+        if not conn:
+            return
+        from .ssh_connection_dialog import SshConnectionDialog
+        dlg = SshConnectionDialog(connection=conn, parent=self)
+        if dlg.exec():
+            updated = dlg.result_connection()
+            self._ssh_service.update(updated)
+            self._load_ssh()
+
+    def _on_ssh_delete(self, conn_id: str) -> None:
+        if self._ssh_service:
+            self._ssh_service.remove(conn_id)
+            self._load_ssh()
 
     # ── .env auto-loading ─────────────────────────────────────────────────
 
