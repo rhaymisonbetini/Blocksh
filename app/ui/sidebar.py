@@ -255,6 +255,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._history_list = QWidget()
@@ -285,6 +286,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._themes_list = QWidget()
@@ -346,6 +348,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._favs_list = QWidget()
@@ -408,6 +411,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._projs_list = QWidget()
@@ -471,6 +475,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._ssh_list = QWidget()
@@ -532,6 +537,7 @@ class Sidebar(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
         self._wf_list = QWidget()
@@ -734,6 +740,7 @@ class Sidebar(QWidget):
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:
         w = QWidget()
         w.setStyleSheet("QWidget { background: transparent; }")
+        w.setMaximumWidth(164)
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(spacing)
