@@ -485,6 +485,12 @@ class PtyWidget(QWidget):
         self._canvas._ascent = fm.ascent()
         self._canvas.update()
 
+    def show_exit_banner(self, exit_code: int) -> None:
+        if self._process:
+            msg = f"\r\n\x1b[33m[Connection closed — exit {exit_code}]\x1b[0m\r\n"
+            self._process._stream.feed(msg.encode())
+            self._canvas.update()
+
     def _on_process_finished(self, exit_code: int) -> None:
         screen = self._process._screen if self._process else None
 
@@ -496,14 +502,19 @@ class PtyWidget(QWidget):
         self._canvas.update()
 
         if screen:
-            lines = [
+            hist_lines = [
+                "".join(row[x].data or " " for x in range(screen.columns)).rstrip()
+                for row in list(screen.history.top)
+            ]
+            curr_lines = [
                 "".join(
                     screen.buffer[y][x].data or " "
                     for x in range(screen.columns)
                 ).rstrip()
                 for y in range(screen.lines)
             ]
-            final_text = "\n".join(lines).rstrip()
+            all_lines = hist_lines + curr_lines
+            final_text = "\n".join(all_lines[-500:]).rstrip()
         else:
             final_text = ""
 
