@@ -12,6 +12,8 @@ from .services.project_service import ProjectService
 from .services.settings_service import SettingsService
 from .infra.storage.ssh_repository import SshRepository
 from .services.ssh_service import SshService
+from .infra.storage.workflow_repository import WorkflowRepository
+from .services.workflow_service import WorkflowService
 
 
 def _build_global_qss(p: Palette) -> str:
@@ -71,6 +73,8 @@ def main():
     project_service    = ProjectService(project_repo)
     ssh_repo           = SshRepository(conn)
     ssh_service        = SshService(ssh_repo)
+    workflow_repo      = WorkflowRepository(conn)
+    workflow_service   = WorkflowService(workflow_repo)
     executor           = SubprocessExecutor()
 
     _s = SettingsService.instance().get()
@@ -79,7 +83,7 @@ def main():
 
     window = MainWindow(executor, repository, favorites_service, project_service,
                         favorites_repo=favorites_repo, project_repo=project_repo,
-                        ssh_service=ssh_service)
+                        ssh_service=ssh_service, workflow_service=workflow_service)
     window.show()
 
     sys.exit(app.exec())

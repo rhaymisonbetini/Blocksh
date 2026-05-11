@@ -77,6 +77,11 @@ class MainWindow(QMainWindow):
         self._sidebar.ssh_add_requested.connect(self._on_ssh_add)
         self._sidebar.ssh_edit_requested.connect(self._on_ssh_edit)
         self._sidebar.ssh_delete_requested.connect(self._on_ssh_delete)
+        self._sidebar.workflows_open_requested.connect(self._load_workflows)
+        self._sidebar.workflow_run_requested.connect(self._on_workflow_run)
+        self._sidebar.workflow_add_requested.connect(self._on_workflow_add)
+        self._sidebar.workflow_edit_requested.connect(self._on_workflow_edit)
+        self._sidebar.workflow_delete_requested.connect(self._on_workflow_delete)
         root.addWidget(self._sidebar)
 
         self._v_sep = QFrame()
@@ -429,6 +434,61 @@ class MainWindow(QMainWindow):
         if self._ssh_service:
             self._ssh_service.remove(conn_id)
             self._load_ssh()
+
+    # ── workflows ─────────────────────────────────────────────────────────
+
+    def _load_workflows(self) -> None:
+        if self._workflow_service:
+            self._sidebar.show_workflows(self._workflow_service.all())
+
+    def _on_workflow_run(self, workflow_id: str) -> None:
+        if not self._workflow_service:
+            return
+        workflows = self._workflow_service.all()
+        wf = next((w for w in workflows if w.id == workflow_id), None)
+        if not wf:
+            return
+        from .workflow_runner import WorkflowRunner
+        dlg = WorkflowRunner(wf, parent=self)
+        dlg.run_requested.connect(self._execute_workflow_commands)
+        dlg.exec()
+        self._workflow_service.touch(workflow_id)
+
+    def _execute_workflow_commands(self, commands: list[str]) -> None:
+        if not self._panels:
+            return
+        panel = self._panels[self._active_index]
+        for cmd in commands:
+            panel._on_command(cmd)
+
+    def _on_workflow_add(self) -> None:
+        if not self._workflow_service:
+            return
+        from .workflow_editor import WorkflowEditor
+        dlg = WorkflowEditor(parent=self)
+        if dlg.exec():
+            wf = dlg.result_workflow()
+            self._workflow_service.add(wf.name, wf.description, wf.steps)
+            self._load_workflows()
+
+    def _on_workflow_edit(self, workflow_id: str) -> None:
+        if not self._workflow_service:
+            return
+        workflows = self._workflow_service.all()
+        wf = next((w for w in workflows if w.id == workflow_id), None)
+        if not wf:
+            return
+        from .workflow_editor import WorkflowEditor
+        dlg = WorkflowEditor(workflow=wf, parent=self)
+        if dlg.exec():
+            updated = dlg.result_workflow()
+            self._workflow_service.update(updated)
+            self._load_workflows()
+
+    def _on_workflow_delete(self, workflow_id: str) -> None:
+        if self._workflow_service:
+            self._workflow_service.remove(workflow_id)
+            self._load_workflows()
 
     # ── .env auto-loading ─────────────────────────────────────────────────
 
