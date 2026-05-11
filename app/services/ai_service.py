@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 import threading
+from dataclasses import dataclass, field
 
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ..domain.block import Block
 
+
+# ── simple one-shot worker (explain / fix / translate) ────────────────────
 
 class _AiWorker(QThread):
     result_ready   = Signal(str)
@@ -27,6 +31,106 @@ class _AiWorker(QThread):
             self.error_occurred.emit(str(exc))
 
 
+# ── agent step dataclasses ────────────────────────────────────────────────
+
+@dataclass
+class ToolCall:
+    id:   str
+    name: str
+    args: dict
+
+
+@dataclass
+class AgentStep:
+    text:        str
+    tool_calls:  list[ToolCall] = field(default_factory=list)
+    raw_content: list[dict]     = field(default_factory=list)
+
+
+# ── tool schemas (Anthropic format — converted per-backend in step()) ─────
+
+_AGENT_TOOLS: list[dict] = [
+    {
+        "name": "read_file",
+        "description": (
+            "Read the contents of a file. Use exact paths as returned by list_dir. "
+            "Only reads plain-text files up to 10 KB."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path relative to cwd or absolute"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_dir",
+        "description": (
+            "List the contents of a directory. Returns filenames with sizes. "
+            "Always call this before read_file to get the exact filename spelling."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Directory path. Use '.' for the working directory.",
+                    "default": ".",
+                },
+            },
+        },
+    },
+    {
+        "name": "run_command",
+        "description": (
+            "Run a shell command in the user's terminal. "
+            "Requires explicit user approval before executing. "
+            "Use only when reading files is not enough to fulfill the request."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Shell command to run"},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "ask_user",
+        "description": (
+            "Ask the user a clarifying question when the request is ambiguous "
+            "or you need more information before proceeding."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The clarifying question to ask"},
+            },
+            "required": ["question"],
+        },
+    },
+]
+
+_SYSTEM_PROMPT = """\
+You are a terminal assistant for the Blocksh terminal emulator.
+The user is working in: {cwd}
+
+Current directory contents:
+{cwd_listing}
+
+You have four tools: read_file, list_dir, run_command, ask_user.
+- Always call list_dir first to get exact filenames before calling read_file.
+- run_command requires user approval. Only use it when file reading is not enough.
+- Use ask_user when the request is ambiguous or you need clarification.
+- Answer in plain text. Be thorough, conversational, and developer-focused.
+- If the task is to produce a shell command for the user to run, end your response with:
+  CMD: <the shell command>
+"""
+
+
+# ── backends ──────────────────────────────────────────────────────────────
+
 class _OllamaBackend:
     def __init__(self, host: str, model: str) -> None:
         self._host  = host.rstrip("/")
@@ -44,6 +148,66 @@ class _OllamaBackend:
         )
         r.raise_for_status()
         return r.json()["response"]
+
+    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
+        try:
+            import httpx
+        except ImportError:
+            raise RuntimeError("httpx not installed — run: pip install httpx")
+
+        ollama_msgs = [{"role": "system", "content": system}]
+        for msg in messages:
+            ollama_msgs.extend(_canonical_to_ollama(msg))
+
+        ollama_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            }
+            for t in tools
+        ]
+
+        r = httpx.post(
+            f"{self._host}/api/chat",
+            json={
+                "model": self._model,
+                "messages": ollama_msgs,
+                "tools": ollama_tools,
+                "stream": False,
+            },
+            timeout=120.0,
+        )
+        r.raise_for_status()
+        msg = r.json()["message"]
+
+        calls: list[ToolCall] = []
+        raw_content: list[dict] = []
+
+        if msg.get("content"):
+            raw_content.append({"type": "text", "text": msg["content"]})
+
+        for i, tc in enumerate(msg.get("tool_calls") or []):
+            fn   = tc.get("function", {})
+            args = fn.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except Exception:
+                    args = {"raw": args}
+            call_id = f"call_{i}"
+            calls.append(ToolCall(id=call_id, name=fn.get("name", ""), args=args))
+            raw_content.append({
+                "type": "tool_use",
+                "id": call_id,
+                "name": fn.get("name", ""),
+                "input": args,
+            })
+
+        return AgentStep(text=msg.get("content") or "", tool_calls=calls, raw_content=raw_content)
 
 
 class _OllamaPingBackend:
@@ -78,6 +242,32 @@ class _AnthropicBackend:
         )
         return msg.content[0].text
 
+    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
+        try:
+            import anthropic
+        except ImportError:
+            raise RuntimeError("anthropic not installed — run: pip install anthropic")
+        client = anthropic.Anthropic(api_key=self._api_key)
+        # Canonical messages ARE Anthropic format — pass directly.
+        resp = client.messages.create(
+            model=self._model,
+            max_tokens=4096,
+            system=system,
+            messages=messages,
+            tools=tools,
+        )
+        text  = ""
+        calls: list[ToolCall] = []
+        raw:   list[dict]     = []
+        for block in resp.content:
+            block_dict = block.model_dump()
+            raw.append(block_dict)
+            if block.type == "text":
+                text = block.text
+            elif block.type == "tool_use":
+                calls.append(ToolCall(id=block.id, name=block.name, args=block.input))
+        return AgentStep(text=text, tool_calls=calls, raw_content=raw)
+
 
 class _OpenAiBackend:
     def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
@@ -98,46 +288,150 @@ class _OpenAiBackend:
         )
         return r.choices[0].message.content
 
+    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
+        try:
+            import openai
+        except ImportError:
+            raise RuntimeError("openai not installed — run: pip install openai")
+        client = openai.OpenAI(api_key=self._api_key)
 
-_SYSTEM_PROMPT_TEMPLATE = """\
-You are an expert, conversational terminal assistant with full filesystem access.
-You reason step-by-step and explore thoroughly before answering.
+        oai_msgs: list[dict] = [{"role": "system", "content": system}]
+        for msg in messages:
+            oai_msgs.extend(_canonical_to_openai(msg))
 
-=== SESSION CONTEXT ===
-Working directory: {cwd}
+        oai_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"],
+                },
+            }
+            for t in tools
+        ]
 
-Contents of the working directory right now (exact names, case-sensitive):
-{cwd_listing}
-======================
+        resp   = client.chat.completions.create(
+            model=self._model,
+            messages=oai_msgs,
+            tools=oai_tools,
+            tool_choice="auto",
+            max_tokens=4096,
+        )
+        choice = resp.choices[0]
+        calls: list[ToolCall] = []
+        raw_content: list[dict] = []
 
-You have four tools. Use EXACTLY ONE per response, then wait for the result:
+        if choice.message.content:
+            raw_content.append({"type": "text", "text": choice.message.content})
 
-  [READ: path]        — read a file (instant, no confirmation needed)
-  [LIST: path]        — list a directory (instant, no confirmation needed)
-  [RUN: command]      — run a shell command (user must approve first)
-  [ASK: question]     — ask the user a clarifying question and wait for their reply
+        for tc in (choice.message.tool_calls or []):
+            args = json.loads(tc.function.arguments)
+            calls.append(ToolCall(id=tc.id, name=tc.function.name, args=args))
+            raw_content.append({
+                "type": "tool_use",
+                "id": tc.id,
+                "name": tc.function.name,
+                "input": args,
+            })
 
-CRITICAL RULES:
-1. Paths are CASE-SENSITIVE on Linux. Copy them EXACTLY from [LIST:] output — never guess.
-2. [LIST:] output already contains the FULL relative path from the working directory.
-   Example: after [LIST: app/], you see "app/main.py  (2,890 bytes)" → use [READ: app/main.py]
-   NEVER strip the directory prefix. If the listing shows "app/main.py", use "app/main.py".
-3. One tool per response. Wait for the result before continuing.
-4. If a tool returns an error: immediately do [LIST: .] to see what actually exists,
-   then retry with the exact name from that listing. Never repeat a failed path.
-5. Use [ASK:] whenever the request is ambiguous or you need more information before proceeding.
-   Example: [ASK: Which file would you like me to look at?]
-6. When you have gathered enough information, write your final answer in plain conversational text.
-   - Be thorough and explain your findings clearly.
-   - If the answer IS a shell command for the user to run, put it on its own line: CMD: <command>
-7. Never invent or guess file contents — always [READ:] a file before describing it."""
+        return AgentStep(
+            text=choice.message.content or "",
+            tool_calls=calls,
+            raw_content=raw_content,
+        )
 
+
+# ── canonical ↔ backend message converters ────────────────────────────────
+
+def _canonical_to_ollama(msg: dict) -> list[dict]:
+    """Convert one canonical message to a list of Ollama messages."""
+    role    = msg["role"]
+    content = msg["content"]
+
+    if role == "user":
+        if isinstance(content, list):
+            # Tool results
+            return [
+                {"role": "tool", "content": block.get("content", "")}
+                for block in content
+                if block.get("type") == "tool_result"
+            ]
+        return [{"role": "user", "content": content}]
+
+    if role == "assistant":
+        if isinstance(content, list):
+            text       = ""
+            tool_calls = []
+            for block in content:
+                if block.get("type") == "text":
+                    text = block.get("text", "")
+                elif block.get("type") == "tool_use":
+                    tool_calls.append({
+                        "function": {
+                            "name":      block["name"],
+                            "arguments": block["input"],
+                        }
+                    })
+            out: dict = {"role": "assistant", "content": text}
+            if tool_calls:
+                out["tool_calls"] = tool_calls
+            return [out]
+        return [{"role": "assistant", "content": content}]
+
+    return [msg]
+
+
+def _canonical_to_openai(msg: dict) -> list[dict]:
+    """Convert one canonical message to a list of OpenAI messages."""
+    role    = msg["role"]
+    content = msg["content"]
+
+    if role == "user":
+        if isinstance(content, list):
+            return [
+                {
+                    "role":         "tool",
+                    "tool_call_id": block["tool_use_id"],
+                    "content":      block.get("content", ""),
+                }
+                for block in content
+                if block.get("type") == "tool_result"
+            ]
+        return [{"role": "user", "content": content}]
+
+    if role == "assistant":
+        if isinstance(content, list):
+            text       = ""
+            tool_calls = []
+            for block in content:
+                if block.get("type") == "text":
+                    text = block.get("text", "")
+                elif block.get("type") == "tool_use":
+                    tool_calls.append({
+                        "id":   block["id"],
+                        "type": "function",
+                        "function": {
+                            "name":      block["name"],
+                            "arguments": json.dumps(block["input"]),
+                        },
+                    })
+            out: dict = {"role": "assistant", "content": text}
+            if tool_calls:
+                out["tool_calls"] = tool_calls
+            return [out]
+        return [{"role": "assistant", "content": content}]
+
+    return [msg]
+
+
+# ── agent worker ──────────────────────────────────────────────────────────
 
 class AgentWorker(QThread):
-    tool_called       = Signal(str, str)        # tool_name, argument
-    tool_result_ready = Signal(str, str, str)   # tool_name, argument, short_preview
+    tool_called       = Signal(str, str)        # tool_name, arg_preview
+    tool_result_ready = Signal(str, str, str)   # tool_name, arg_preview, short_result
     permission_needed = Signal(str)             # command string waiting for approval
-    ask_user          = Signal(str)             # question string waiting for user reply
+    ask_user          = Signal(str)             # question waiting for user reply
     final_answer      = Signal(str)             # plain-text answer to show inline
     command_ready     = Signal(str)             # shell command → put in InputBar
     error_occurred    = Signal(str)
@@ -149,9 +443,9 @@ class AgentWorker(QThread):
 
     def __init__(self, request: str, cwd: str, backend) -> None:
         super().__init__()
-        self._request  = request
-        self._cwd      = cwd
-        self._backend  = backend
+        self._request      = request
+        self._cwd          = cwd
+        self._backend      = backend
         self._perm_event   = threading.Event()
         self._perm_granted = False
         self._ask_event    = threading.Event()
@@ -177,13 +471,79 @@ class AgentWorker(QThread):
         except Exception as exc:
             self.error_occurred.emit(str(exc))
 
+    # ── main loop ─────────────────────────────────────────────────────────
+
+    def _loop(self) -> None:
+        system   = _SYSTEM_PROMPT.format(cwd=self._cwd, cwd_listing=self._cwd_snapshot())
+        messages: list[dict] = [{"role": "user", "content": self._request}]
+
+        for _ in range(self._MAX_TURNS):
+            if self._cancelled:
+                return
+
+            step = self._backend.step(system, messages, _AGENT_TOOLS)
+
+            # Append assistant turn to canonical history
+            messages.append({"role": "assistant", "content": step.raw_content})
+
+            if not step.tool_calls:
+                text = step.text.strip()
+                cmd_match = re.search(r'^CMD:\s*(.+)$', text, re.MULTILINE)
+                if cmd_match:
+                    self.command_ready.emit(cmd_match.group(1).strip())
+                else:
+                    self.final_answer.emit(text or "(no response)")
+                return
+
+            # Execute tools and collect results for the next user turn
+            tool_results: list[dict] = []
+            for call in step.tool_calls:
+                arg_preview = _args_preview(call.args)
+                self.tool_called.emit(call.name, arg_preview)
+
+                result = self._dispatch_tool(call)
+                if result is None:
+                    # User denied — inform model and stop
+                    tool_results.append({
+                        "type":        "tool_result",
+                        "tool_use_id": call.id,
+                        "content":     "User denied permission.",
+                    })
+                    messages.append({"role": "user", "content": tool_results})
+                    self.final_answer.emit("Cancelled.")
+                    return
+
+                preview = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
+                self.tool_result_ready.emit(call.name, arg_preview, preview)
+                tool_results.append({
+                    "type":        "tool_result",
+                    "tool_use_id": call.id,
+                    "content":     result,
+                })
+
+            messages.append({"role": "user", "content": tool_results})
+
+        self.error_occurred.emit("Reached maximum reasoning steps without a final answer.")
+
+    def _dispatch_tool(self, call: ToolCall) -> str | None:
+        if call.name == "read_file":
+            return self._read_file(call.args.get("path", ""))
+        if call.name == "list_dir":
+            return self._list_dir(call.args.get("path", "."))
+        if call.name == "run_command":
+            return self._run_with_permission(call.args.get("command", ""))
+        if call.name == "ask_user":
+            return self._ask_with_permission(call.args.get("question", ""))
+        return f"Unknown tool: {call.name}"
+
+    # ── helpers ───────────────────────────────────────────────────────────
+
     def _cwd_snapshot(self) -> str:
-        """Return a compact directory listing to seed the system prompt."""
         try:
             entries = sorted(os.listdir(self._cwd))[:40]
-            lines = []
+            lines   = []
             for name in entries:
-                fp = os.path.join(self._cwd, name)
+                fp     = os.path.join(self._cwd, name)
                 suffix = "/" if os.path.isdir(fp) else ""
                 lines.append(f"  {name}{suffix}")
             total = len(os.listdir(self._cwd))
@@ -193,66 +553,8 @@ class AgentWorker(QThread):
         except Exception:
             return "  (unable to list)"
 
-    def _loop(self) -> None:
-        listing  = self._cwd_snapshot()
-        system   = _SYSTEM_PROMPT_TEMPLATE.format(cwd=self._cwd, cwd_listing=listing)
-        history: list[str] = [f"{system}\n\nUser request: {self._request}"]
-
-        for _ in range(self._MAX_TURNS):
-            if self._cancelled:
-                return
-
-            response = self._backend.complete("\n\n".join(history)).strip()
-
-            # Final shell command?
-            cmd_match = re.search(r'^CMD:\s*(.+)$', response, re.MULTILINE)
-            if cmd_match:
-                self.command_ready.emit(cmd_match.group(1).strip())
-                return
-
-            # Tool call?
-            tool_match = re.search(r'\[(READ|LIST|RUN|ASK):\s*(.+?)\]', response, re.IGNORECASE)
-            if not tool_match:
-                self.final_answer.emit(response)
-                return
-
-            tool = tool_match.group(1).upper()
-            arg  = tool_match.group(2).strip()
-            self.tool_called.emit(tool, arg)
-
-            result = self._execute_tool(tool, arg)
-            if result is None:
-                history.append(response)
-                history.append("[Tool result: User denied permission. Do not retry this command.]")
-            else:
-                is_error = result.startswith("Error")
-                preview  = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
-                self.tool_result_ready.emit(tool, arg, preview)
-                history.append(response)
-                if is_error:
-                    history.append(
-                        f"[Tool result: {result}\n"
-                        f"→ That path does not exist. Use [LIST: .] to see exactly what is "
-                        f"available, then retry using the exact name from the listing.]"
-                    )
-                else:
-                    history.append(f"[Tool result for {tool}({arg}):\n{result}\n]")
-
-        self.error_occurred.emit("Reached maximum reasoning steps without a final answer.")
-
-    def _execute_tool(self, tool: str, arg: str) -> str | None:
-        if tool == "READ":
-            return self._read_file(arg)
-        if tool == "LIST":
-            return self._list_dir(arg)
-        if tool == "RUN":
-            return self._run_with_permission(arg)
-        if tool == "ASK":
-            return self._ask_with_permission(arg)
-        return f"Unknown tool: {tool}"
-
     def _abs(self, path: str) -> str:
-        """Resolve path, with case-insensitive fallback for each component."""
+        """Resolve path with case-insensitive fallback per component."""
         path = os.path.expanduser(path.strip())
         if not os.path.isabs(path):
             path = os.path.join(self._cwd, path)
@@ -260,8 +562,7 @@ class AgentWorker(QThread):
         if os.path.exists(path):
             return path
 
-        # Walk component by component, matching case-insensitively when exact fails.
-        parts = path.split(os.sep)  # ['', 'home', 'user', 'App', 'main.py']
+        parts    = path.split(os.sep)
         resolved = os.sep
         for part in parts[1:]:
             if not part:
@@ -273,8 +574,7 @@ class AgentWorker(QThread):
                 try:
                     lower = part.lower()
                     match = next(
-                        (e for e in os.listdir(resolved) if e.lower() == lower),
-                        None,
+                        (e for e in os.listdir(resolved) if e.lower() == lower), None
                     )
                     resolved = os.path.join(resolved, match if match else part)
                 except (PermissionError, NotADirectoryError, OSError):
@@ -297,13 +597,11 @@ class AgentWorker(QThread):
     def _list_dir(self, path: str) -> str:
         full = self._abs(path)
         try:
-            # Prefix each entry with its path relative to cwd so the model can
-            # copy-paste names directly into [READ:] calls without stripping dirs.
             rel_dir = os.path.relpath(full, self._cwd)
             prefix  = "" if rel_dir == "." else rel_dir.rstrip("/") + "/"
 
             entries = sorted(os.listdir(full))[: self._MAX_LIST_ITEMS]
-            lines = []
+            lines   = []
             for name in entries:
                 fp      = os.path.join(full, name)
                 display = prefix + name
@@ -315,21 +613,11 @@ class AgentWorker(QThread):
                         lines.append(f"{display}  ({sz:,} bytes)")
                     except OSError:
                         lines.append(display)
-            total = len(os.listdir(full))
+            total  = len(os.listdir(full))
             suffix = f"\n… ({total - self._MAX_LIST_ITEMS} more)" if total > self._MAX_LIST_ITEMS else ""
             return ("\n".join(lines) or "(empty directory)") + suffix
         except Exception as exc:
             return f"Error listing directory: {exc}"
-
-    def _ask_with_permission(self, question: str) -> str | None:
-        self._ask_event.clear()
-        self._ask_answer = ""
-        self.ask_user.emit(question)
-        if not self._ask_event.wait(timeout=self._PERM_TIMEOUT):
-            return "Timeout — user did not reply."
-        if self._cancelled:
-            return None
-        return self._ask_answer or "(no answer provided)"
 
     def _run_with_permission(self, command: str) -> str | None:
         self._perm_event.clear()
@@ -342,7 +630,7 @@ class AgentWorker(QThread):
             return None
 
         try:
-            proc = subprocess.run(
+            proc   = subprocess.run(
                 command, shell=True, capture_output=True, text=True,
                 timeout=30, cwd=self._cwd,
             )
@@ -355,6 +643,27 @@ class AgentWorker(QThread):
         except Exception as exc:
             return f"Error running command: {exc}"
 
+    def _ask_with_permission(self, question: str) -> str | None:
+        self._ask_event.clear()
+        self._ask_answer = ""
+        self.ask_user.emit(question)
+        if not self._ask_event.wait(timeout=self._PERM_TIMEOUT):
+            return "Timeout — user did not reply."
+        if self._cancelled:
+            return None
+        return self._ask_answer or "(no answer provided)"
+
+
+def _args_preview(args: dict) -> str:
+    """Return a compact single-value preview of tool args for UI display."""
+    if not args:
+        return ""
+    if len(args) == 1:
+        return str(next(iter(args.values())))
+    return ", ".join(f"{k}={v}" for k, v in args.items())
+
+
+# ── service ───────────────────────────────────────────────────────────────
 
 class AiService(QObject):
     _instance: AiService | None = None
