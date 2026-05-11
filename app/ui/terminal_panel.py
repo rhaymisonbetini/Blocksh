@@ -54,6 +54,7 @@ class TerminalPanel(QWidget):
     cwd_changed        = Signal(str)          # emits cwd_display after every command
     favorite_requested = Signal(str, str, str)  # name, command_text, cwd
     env_file_detected  = Signal(str, str)     # (cwd, env_file_path)
+    focused            = Signal()             # emitted when any child area is clicked
 
     def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
         super().__init__(parent)
@@ -71,6 +72,8 @@ class TerminalPanel(QWidget):
 
         self._build_ui()
         self._wire_completion()
+        self._scroll.installEventFilter(self)
+        self._blocks_container.installEventFilter(self)
 
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
@@ -87,6 +90,16 @@ class TerminalPanel(QWidget):
 
     def set_input_text(self, text: str) -> None:
         self._input_bar.set_text(text)
+
+    def focusInEvent(self, event) -> None:
+        super().focusInEvent(event)
+        self.focused.emit()
+
+    def eventFilter(self, obj, event) -> bool:
+        from PySide6.QtCore import QEvent
+        if event.type() in (QEvent.MouseButtonPress, QEvent.FocusIn):
+            self.focused.emit()
+        return False
 
     def toggle_search(self) -> None:
         visible = not self._search_bar.isVisible()
