@@ -47,6 +47,20 @@ class ProjectRepository:
         )
         self._conn.commit()
 
+    def get_env_decision(self, path: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT env_decision FROM projects WHERE path = ?", (path,)
+        ).fetchone()
+        if row and row["env_decision"]:
+            return row["env_decision"]
+        return None
+
+    def set_env_decision(self, path: str, decision: str) -> None:
+        self._conn.execute(
+            "UPDATE projects SET env_decision = ? WHERE path = ?", (decision, path)
+        )
+        self._conn.commit()
+
     @staticmethod
     def _row_to_project(row: sqlite3.Row) -> Project:
         return Project(

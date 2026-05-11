@@ -207,6 +207,7 @@ class MainWindow(QMainWindow):
         panel = TerminalPanel(self._executor, self._repository)
         panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd_changed(cwd, p))
         panel.favorite_requested.connect(self._on_favorite_requested)
+        panel.env_file_detected.connect(self._on_env_file_detected)
         self._panels.append(panel)
         self._stack.addWidget(panel)
         self._tab_bar.add_tab(f"Terminal {len(self._panels)}")
@@ -369,6 +370,39 @@ class MainWindow(QMainWindow):
     def _on_project_delete(self, project_id: str) -> None:
         self._project_service.remove(project_id)
         self._load_projects()
+
+    # ── .env auto-loading ─────────────────────────────────────────────────
+
+    def _on_env_file_detected(self, cwd: str, env_path: str) -> None:
+        from pathlib import Path
+        from PySide6.QtWidgets import QMessageBox
+
+        # Check for persisted decision
+        decision = self._project_service.env_decision(cwd)
+        if decision == "reject":
+            return
+        panel = next((p for p in self._panels if p._session.cwd == cwd), None)
+        if panel is None:
+            return
+        if decision == "accept":
+            variables = panel._session.load_env_file(Path(env_path))
+            panel._session.apply_env(variables)
+            return
+
+        result = QMessageBox.question(
+            self,
+            "Load .env file?",
+            f"Found <b>{Path(env_path).name}</b> in<br>{cwd}<br><br>"
+            "Load variables into this terminal tab?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if result == QMessageBox.Yes:
+            variables = panel._session.load_env_file(Path(env_path))
+            panel._session.apply_env(variables)
+            self._project_service.accept_env(cwd)
+        else:
+            self._project_service.reject_env(cwd)
 
     # ── command palette ───────────────────────────────────────────────────
 

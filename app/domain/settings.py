@@ -22,3 +22,4 @@ class AppSettings:
     ai_anthropic_model: str  = "claude-haiku-4-5-20251001"
     ai_openai_key:      str  = ""
     ai_openai_model:    str  = "gpt-4o-mini"
+    auto_load_env:      str  = "ask"   # "ask" | "always" | "never"

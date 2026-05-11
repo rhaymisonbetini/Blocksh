@@ -63,3 +63,13 @@ class ProjectService:
         self, project: Project, history_repository: HistoryRepository, limit: int = 8
     ) -> list[Block]:
         return history_repository.load_by_cwd_prefix(project.path, limit)
+
+    def env_decision(self, path: str) -> str | None:
+        """Return persisted env decision: 'accept', 'reject', or None."""
+        return self._repo.get_env_decision(path)
+
+    def accept_env(self, path: str) -> None:
+        self._repo.set_env_decision(path, "accept")
+
+    def reject_env(self, path: str) -> None:
+        self._repo.set_env_decision(path, "reject")

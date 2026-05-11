@@ -53,6 +53,7 @@ class TerminalPanel(QWidget):
 
     cwd_changed        = Signal(str)          # emits cwd_display after every command
     favorite_requested = Signal(str, str, str)  # name, command_text, cwd
+    env_file_detected  = Signal(str, str)     # (cwd, env_file_path)
 
     def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
         super().__init__(parent)
@@ -181,6 +182,7 @@ class TerminalPanel(QWidget):
             self._add_block(block)
             self._input_bar.update_history(self._history.commands())
             self.cwd_changed.emit(self._session.cwd_display())
+            self._check_env_files()
         elif self._is_interactive(text):
             self._start_pty_session(text, command)
         else:
@@ -541,6 +543,24 @@ class TerminalPanel(QWidget):
         worker.error_occurred.connect(_on_error)
         self._ai_workers.append(worker)
         worker.start()
+
+    # ── .env detection ────────────────────────────────────────────────────────
+
+    def _check_env_files(self) -> None:
+        from ..services.settings_service import SettingsService
+        policy = SettingsService.instance().get().auto_load_env
+        if policy == "never":
+            return
+        env_files = self._session.detect_env_files()
+        if not env_files:
+            return
+        cwd = self._session.cwd
+        if policy == "always":
+            variables = self._session.load_env_file(env_files[0])
+            self._session.apply_env(variables)
+            return
+        # policy == "ask" — emit signal; MainWindow handles dialog
+        self.env_file_detected.emit(cwd, str(env_files[0]))
 
     # ── block management ──────────────────────────────────────────────────────
 
