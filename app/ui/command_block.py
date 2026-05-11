@@ -10,7 +10,8 @@ from PySide6.QtGui import (
     QFont, QFontMetrics,
     QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor,
 )
-from .ansi_renderer import render_ansi
+from .ansi_renderer import render_ansi, render_ansi_with_links
+from .clickable_output import ClickableOutput
 from PySide6.QtCore import Signal, Qt, QSize, QTimer
 from ..domain.block import Block
 from .theme import Palette, ThemeManager
@@ -22,10 +23,10 @@ _ANSI_RE = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|[^[])')
 _QWIDGETSIZE_MAX = 16_777_215
 
 
-class _OutputEdit(QPlainTextEdit):
-    """QPlainTextEdit whose sizeHint reflects the height set via setFixedHeight.
+class _OutputEdit(ClickableOutput):
+    """ClickableOutput whose sizeHint reflects the height set via setFixedHeight.
 
-    QPlainTextEdit.sizeHint() returns a fixed ~192 px regardless of content.
+    QTextEdit.sizeHint() returns a fixed ~192 px regardless of content.
     When that large hint is used by the parent VBoxLayout to allocate space,
     the card receives far more height than the output needs. The widget itself
     can't fill it (setFixedHeight prevents growth), so the surplus shows up as
@@ -75,7 +76,7 @@ def _process_cr_ansi(text: str) -> str:
 
 
 def _insert_ansi_text(cursor: QTextCursor, text: str) -> None:
-    for segment, fmt in render_ansi(text):
+    for segment, fmt in render_ansi_with_links(text):
         cursor.insertText(segment, fmt)
 
 
@@ -244,7 +245,7 @@ class CommandBlock(QWidget):
             )
         if self._output_widget:
             self._output_widget.setStyleSheet(
-                f"QPlainTextEdit {{ background: transparent; border: none;"
+                f"QTextEdit {{ background: transparent; border: none;"
                 f" color: {p.fg}; selection-background-color: {p.bg_overlay}; }}"
             )
         if self._cwd_lbl:
@@ -283,7 +284,7 @@ class CommandBlock(QWidget):
             )
             if self._explanation_label:
                 self._explanation_label.setStyleSheet(
-                    f"QPlainTextEdit {{ background: transparent; border: none;"
+                    f"QTextEdit {{ background: transparent; border: none;"
                     f" color: {p.fg}; font-size: 9pt; }}"
                 )
 
@@ -411,7 +412,7 @@ class CommandBlock(QWidget):
         out.setContentsMargins(0, 0, 0, 0)
         fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
-            f"QPlainTextEdit {{ background: transparent; border: none;"
+            f"QTextEdit {{ background: transparent; border: none;"
             f" color: {fg_color}; selection-background-color: {p.bg_overlay}; }}"
         )
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -423,7 +424,10 @@ class CommandBlock(QWidget):
             _insert_ansi_text(cursor, display)
             out.setTextCursor(cursor)
         else:
-            out.setPlainText(_clean_output(text).rstrip())
+            display = _clean_output(text).rstrip()
+            cursor = out.textCursor()
+            _insert_ansi_text(cursor, display)
+            out.setTextCursor(cursor)
             is_stderr = bool(self._block.stderr) and not self._block.stdout
             _OutputHighlighter(
                 out.document(),
@@ -516,7 +520,7 @@ class CommandBlock(QWidget):
         out.setContentsMargins(0, 0, 0, 0)
         fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
-            f"QPlainTextEdit {{ background: transparent; border: none;"
+            f"QTextEdit {{ background: transparent; border: none;"
             f" color: {fg_color}; selection-background-color: {p.bg_overlay}; }}"
         )
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -626,7 +630,7 @@ class CommandBlock(QWidget):
             edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             edit.setStyleSheet(
-                f"QPlainTextEdit {{ background: transparent; border: none;"
+                f"QTextEdit {{ background: transparent; border: none;"
                 f" color: {p.fg}; font-size: 9pt; }}"
             )
             inner.addWidget(edit)
