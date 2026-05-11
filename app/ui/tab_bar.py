@@ -109,6 +109,8 @@ class TabBar(QWidget):
     search_requested       = Signal()
     collapse_all_requested = Signal()
     settings_requested     = Signal()
+    split_h_requested      = Signal()
+    split_v_requested      = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -150,6 +152,18 @@ class TabBar(QWidget):
         self._collapse_btn.setToolTip("Collapse / expand all blocks")
         self._collapse_btn.clicked.connect(self.collapse_all_requested)
         layout.addWidget(self._collapse_btn)
+
+        self._split_h_btn = QPushButton("⬝")
+        self._split_h_btn.setFixedSize(28, 28)
+        self._split_h_btn.setToolTip("Split pane right (Ctrl+Shift+\\)")
+        self._split_h_btn.clicked.connect(self.split_h_requested)
+        layout.addWidget(self._split_h_btn)
+
+        self._split_v_btn = QPushButton("⬜")
+        self._split_v_btn.setFixedSize(28, 28)
+        self._split_v_btn.setToolTip("Split pane down (Ctrl+Shift+-)")
+        self._split_v_btn.clicked.connect(self.split_v_requested)
+        layout.addWidget(self._split_v_btn)
 
         self._settings_btn = QPushButton("⚙")
         self._settings_btn.setFixedSize(28, 28)
@@ -198,6 +212,8 @@ class TabBar(QWidget):
         )
         self._search_btn.setStyleSheet(icon_style)
         self._collapse_btn.setStyleSheet(icon_style)
+        self._split_h_btn.setStyleSheet(icon_style)
+        self._split_v_btn.setStyleSheet(icon_style)
         self._settings_btn.setStyleSheet(icon_style)
         self._refresh_avatar()
         for tab in self._tabs:

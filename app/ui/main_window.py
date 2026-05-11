@@ -8,6 +8,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from .sidebar import Sidebar
 from .tab_bar import TabBar
 from .terminal_panel import TerminalPanel
+from .split_pane_container import SplitPaneContainer
 from .theme import Palette, ThemeManager
 from .settings_panel import SettingsPanel
 from .command_palette import CommandPalette
@@ -38,7 +39,7 @@ class MainWindow(QMainWindow):
         self._project_repo       = project_repo
         self._ssh_service        = ssh_service
         self._workflow_service   = workflow_service
-        self._panels: list[TerminalPanel] = []
+        self._panels: list[SplitPaneContainer] = []
         self._active_index  = 0
 
         self.setWindowTitle("Blocksh")
@@ -104,6 +105,8 @@ class MainWindow(QMainWindow):
         self._tab_bar.search_requested.connect(self._toggle_search)
         self._tab_bar.collapse_all_requested.connect(self._toggle_collapse_all)
         self._tab_bar.settings_requested.connect(self._open_settings)
+        self._tab_bar.split_h_requested.connect(self._split_h)
+        self._tab_bar.split_v_requested.connect(self._split_v)
         tv_layout.addWidget(self._tab_bar)
 
         self._h_sep = QFrame()
@@ -200,6 +203,9 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._clear_active)
         QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._toggle_palette)
         QShortcut(QKeySequence("Escape"), self).activated.connect(self._esc_settings)
+        QShortcut(QKeySequence("Ctrl+Shift+\\"), self).activated.connect(self._split_h)
+        QShortcut(QKeySequence("Ctrl+Shift+-"), self).activated.connect(self._split_v)
+        QShortcut(QKeySequence("Ctrl+Shift+W"), self).activated.connect(self._close_pane)
 
     # ── settings navigation ───────────────────────────────────────────────────
 
@@ -218,12 +224,14 @@ class MainWindow(QMainWindow):
     # ── tab management ────────────────────────────────────────────────────────
 
     def _add_tab(self) -> None:
-        panel = TerminalPanel(self._executor, self._repository)
-        panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd_changed(cwd, p))
-        panel.favorite_requested.connect(self._on_favorite_requested)
-        panel.env_file_detected.connect(self._on_env_file_detected)
-        self._panels.append(panel)
-        self._stack.addWidget(panel)
+        container = SplitPaneContainer(self._executor, self._repository)
+        container.cwd_changed.connect(
+            lambda cwd, c=container: self._on_panel_cwd_changed(cwd, c)
+        )
+        container.favorite_requested.connect(self._on_favorite_requested)
+        container.env_file_detected.connect(self._on_env_file_detected)
+        self._panels.append(container)
+        self._stack.addWidget(container)
         self._tab_bar.add_tab(f"Terminal {len(self._panels)}")
         self._switch_tab(len(self._panels) - 1)
 
@@ -295,10 +303,22 @@ class MainWindow(QMainWindow):
         if self._panels:
             self._panels[self._active_index].clear_blocks()
 
+    def _split_h(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].split_horizontal()
+
+    def _split_v(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].split_vertical()
+
+    def _close_pane(self) -> None:
+        if self._panels:
+            self._panels[self._active_index].close_active_pane()
+
     # ── cwd / title ───────────────────────────────────────────────────────────
 
-    def _on_panel_cwd_changed(self, cwd: str, panel: TerminalPanel) -> None:
-        if panel in self._panels and self._panels.index(panel) == self._active_index:
+    def _on_panel_cwd_changed(self, cwd: str, container: SplitPaneContainer) -> None:
+        if container in self._panels and self._panels.index(container) == self._active_index:
             self._sidebar.update_cwd(cwd)
             self._update_title()
         if cwd:
@@ -500,7 +520,9 @@ class MainWindow(QMainWindow):
         decision = self._project_service.env_decision(cwd)
         if decision == "reject":
             return
-        panel = next((p for p in self._panels if p._session.cwd == cwd), None)
+        panel = next(
+            (p for p in self._panels if p._session and p._session.cwd == cwd), None
+        )
         if panel is None:
             return
         if decision == "accept":
