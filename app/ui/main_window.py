@@ -68,6 +68,8 @@ class MainWindow(QMainWindow):
         self._sidebar.favorite_command_selected.connect(self._on_favorite_command_selected)
         self._sidebar.favorite_rename_requested.connect(self._on_favorite_rename)
         self._sidebar.favorite_delete_requested.connect(self._on_favorite_delete)
+        self._sidebar.favorite_edit_requested.connect(self._on_favorite_edit)
+        self._sidebar.favorite_add_requested.connect(self._on_favorite_add)
         self._sidebar.projects_open_requested.connect(self._load_projects)
         self._sidebar.project_selected.connect(self._on_project_selected)
         self._sidebar.project_add_requested.connect(self._on_project_add)
@@ -367,6 +369,14 @@ class MainWindow(QMainWindow):
 
     def _on_favorite_delete(self, fav_id: str) -> None:
         self._favorites_service.remove(fav_id)
+        self._load_favorites()
+
+    def _on_favorite_edit(self, fav_id: str, name: str, cmd: str, cwd: str) -> None:
+        self._favorites_service.update(fav_id, name, cmd, cwd)
+        self._load_favorites()
+
+    def _on_favorite_add(self, name: str, cmd: str, cwd: str) -> None:
+        self._favorites_service.add(name, cmd, cwd)
         self._load_favorites()
 
     # ── projects ──────────────────────────────────────────────────────────────

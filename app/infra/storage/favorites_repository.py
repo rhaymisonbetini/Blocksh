@@ -33,6 +33,13 @@ class FavoritesRepository:
         self._conn.execute("UPDATE favorites SET name = ? WHERE id = ?", (name, fav_id))
         self._conn.commit()
 
+    def update(self, fav_id: str, name: str, command_text: str, cwd: str) -> None:
+        self._conn.execute(
+            "UPDATE favorites SET name=?, command_text=?, cwd=? WHERE id=?",
+            (name, command_text, cwd, fav_id),
+        )
+        self._conn.commit()
+
     @staticmethod
     def _row_to_favorite(row: sqlite3.Row) -> Favorite:
         return Favorite(
