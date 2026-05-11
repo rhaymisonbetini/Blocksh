@@ -46,3 +46,10 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         );
     """)
     conn.commit()
+
+    # Migrations — run safely on existing databases
+    try:
+        conn.execute("ALTER TABLE projects ADD COLUMN env_decision TEXT")
+        conn.commit()
+    except Exception:
+        pass  # column already exists

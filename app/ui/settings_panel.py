@@ -664,6 +664,19 @@ class _TerminalSection(QWidget):
         )
         vbox.addWidget(_row_widget("History retention", self._retention_combo, p))
 
+        # .env auto-load
+        self._env_combo = QComboBox()
+        env_labels  = ["Ask each time", "Always load automatically", "Never load"]
+        env_values  = ["ask", "always", "never"]
+        self._env_combo.addItems(env_labels)
+        current_env = s.auto_load_env if s.auto_load_env in env_values else "ask"
+        self._env_combo.setCurrentIndex(env_values.index(current_env))
+        self._env_combo.setStyleSheet(ctrl_style)
+        self._env_combo.currentIndexChanged.connect(
+            lambda i: SettingsService.instance().update(auto_load_env=env_values[i])
+        )
+        vbox.addWidget(_row_widget(".env file loading", self._env_combo, p))
+
         # info note
         note = QLabel("Shell and scrollback changes apply to new terminal tabs only.")
         note.setWordWrap(True)

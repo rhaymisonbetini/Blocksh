@@ -69,3 +69,36 @@ class ShellSession:
             return True
 
         return False  # directory doesn't exist — let subprocess report the error
+
+    # ── .env file support ─────────────────────────────────────────────────
+
+    def detect_env_files(self) -> list[Path]:
+        """Return existing .env* files in current cwd, in priority order."""
+        candidates = [".env.local", ".env.development", ".env"]
+        return [
+            Path(self._cwd) / name
+            for name in candidates
+            if (Path(self._cwd) / name).exists()
+        ]
+
+    def load_env_file(self, path: Path) -> dict[str, str]:
+        """Parse a .env file and return key=value pairs.
+        Skips comments (#) and blank lines. Strips quotes from values."""
+        result: dict[str, str] = {}
+        try:
+            for line in path.read_text(errors="replace").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key   = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    result[key] = value
+        except Exception:
+            pass
+        return result
+
+    def apply_env(self, variables: dict[str, str]) -> None:
+        """Merge variables into this session's environment."""
+        self._env.update(variables)
