@@ -75,6 +75,23 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+            id         TEXT PRIMARY KEY,
+            tab_id     TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id          TEXT PRIMARY KEY,
+            session_id  TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+            role        TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+
     # Migrations — run safely on existing databases
     try:
         conn.execute("ALTER TABLE projects ADD COLUMN env_decision TEXT")
