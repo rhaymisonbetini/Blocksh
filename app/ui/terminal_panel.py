@@ -10,6 +10,7 @@ from PySide6.QtCore import Signal, QPoint, Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence
 
 from .ai_permission_banner import AiPermissionBanner
+from .ai_panel import AiPanel
 from .command_block import CommandBlock
 from .completion_popup import CompletionPopup
 from .input_bar import InputBar
@@ -69,6 +70,7 @@ class TerminalPanel(QWidget):
         self._running_thread:  CommandThread | None = None
         self._ai_workers:      list = []
         self._agent_worker     = None   # current AgentWorker (if running)
+        self._agent_session    = None   # persistent AgentSession (one per tab)
 
         self._build_ui()
         self._wire_completion()
@@ -156,6 +158,11 @@ class TerminalPanel(QWidget):
         # Popup is a child of this panel — overlaps siblings, no top-level issues
         self._completion_popup = CompletionPopup(self)
         self._completion_popup.item_activated.connect(self._on_completion_activated)
+
+        # AI panel overlay — created once, shown/hidden per request
+        self._ai_panel = AiPanel(self)
+        self._ai_panel.closed.connect(self._on_ai_panel_closed)
+        self._ai_panel.command_ready.connect(self._input_bar.set_text)
 
         # Global Ctrl+C shortcut — kills the running thread regardless of which child has focus.
         # Enabled only during execution so normal Ctrl+C (clear input) still works when idle.
@@ -265,6 +272,8 @@ class TerminalPanel(QWidget):
         self._history.add(block)
         self._input_bar.update_history(self._history.commands())
         self.cwd_changed.emit(self._session.cwd_display())
+        if self._agent_session is not None:
+            self._agent_session.update_cwd(self._session.cwd)
         self._input_bar.focus()
 
     def _on_ctrl_c(self) -> None:
@@ -303,6 +312,8 @@ class TerminalPanel(QWidget):
         super().resizeEvent(event)
         if self._pty_widget:
             self._pty_widget.setGeometry(self.rect())
+        if self._ai_panel and self._ai_panel.isVisible():
+            self._ai_panel.setGeometry(self.rect())
 
     def _on_pty_finished(self, exit_code: int, final_text: str) -> None:
         if self._pty_widget:
@@ -481,100 +492,23 @@ class TerminalPanel(QWidget):
         worker.start()
 
     def _agent_chat(self, request: str) -> None:
-        from ..services.ai_service import AiService, AgentWorker
+        from ..services.ai_service import AiService
         if not AiService.instance().is_enabled():
             return
 
-        # Cancel any running agent
-        if self._agent_worker is not None:
-            self._agent_worker.cancel()
-            self._agent_worker = None
+        # Lazy-create session (persists for lifetime of this tab)
+        if self._agent_session is None:
+            self._agent_session = AiService.instance().create_session(self._session.cwd)
 
-        self._input_bar.set_thinking(True)
+        # Attach session to panel and show
+        self._ai_panel.attach_session(self._agent_session)
+        self._ai_panel.setGeometry(self.rect())
+        self._ai_panel.show()
+        self._ai_panel.raise_()
+        self._ai_panel.submit(request)
 
-        # Create a visible block for the AI conversation
-        from ..domain.command import Command
-        from ..domain.block import Block
-        cmd  = Command(text=f"> {request}")
-        blk  = Block(command=cmd, stdout="", stderr="", exit_code=-1, cwd=self._session.cwd)
-        bw   = CommandBlock(blk)
-        bw.remove_requested.connect(self._remove_block)
-        self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, bw)
-
-        worker = AiService.instance().agent_chat(request, self._session.cwd)
-        self._agent_worker = worker
-
-        def _on_tool(tool: str, arg: str) -> None:
-            icons = {
-                "read_file":   "📄",
-                "list_dir":    "📂",
-                "run_command": "⚙",
-                "ask_user":    "💬",
-            }
-            bw.append_output(f"{icons.get(tool, '🔧')} {tool}: {arg}\n")
-
-        def _on_tool_result(tool: str, arg: str, preview: str) -> None:
-            bw.append_output(f"   ↳ {preview}\n")
-
-        def _on_permission(command: str) -> None:
-            bw.append_output(f"⚠  Asking permission to run: {command}\n")
-            banner = self._permission_banner
-            banner.show_request(command)
-            # Use one-shot lambdas via a local variable to avoid signal accumulation.
-            def _allow():
-                try: banner.allowed.disconnect(_allow)
-                except RuntimeError: pass
-                try: banner.denied.disconnect(_deny)
-                except RuntimeError: pass
-                worker.grant_permission(True)
-            def _deny():
-                try: banner.allowed.disconnect(_allow)
-                except RuntimeError: pass
-                try: banner.denied.disconnect(_deny)
-                except RuntimeError: pass
-                worker.grant_permission(False)
-            banner.allowed.connect(_allow)
-            banner.denied.connect(_deny)
-
-        def _on_ask(question: str) -> None:
-            bw.append_output(f"💬 ASK: {question}\n")
-            banner = self._permission_banner
-            banner.show_question(question)
-            def _send(answer: str):
-                try: banner.answered.disconnect(_send)
-                except RuntimeError: pass
-                bw.append_output(f"   ↳ User: {answer}\n")
-                worker.answer_question(answer)
-            banner.answered.connect(_send)
-
-        def _on_final(text: str) -> None:
-            self._input_bar.set_thinking(False)
-            bw.append_output(f"\n💡 {text}")
-            bw.finalize(0)
-            self._agent_worker = None
-
-        def _on_command(cmd_text: str) -> None:
-            self._input_bar.set_thinking(False)
-            bw.append_output(f"\n→ {cmd_text}")
-            bw.finalize(0)
-            self._input_bar.set_text(cmd_text)
-            self._agent_worker = None
-
-        def _on_error(msg: str) -> None:
-            self._input_bar.set_thinking(False)
-            bw.append_output(f"\n⚠  {msg}")
-            bw.finalize(1)
-            self._agent_worker = None
-
-        worker.tool_called.connect(_on_tool)
-        worker.tool_result_ready.connect(_on_tool_result)
-        worker.permission_needed.connect(_on_permission)
-        worker.ask_user.connect(_on_ask)
-        worker.final_answer.connect(_on_final)
-        worker.command_ready.connect(_on_command)
-        worker.error_occurred.connect(_on_error)
-        self._ai_workers.append(worker)
-        worker.start()
+    def _on_ai_panel_closed(self) -> None:
+        self._input_bar.focus()
 
     # ── .env detection ────────────────────────────────────────────────────────
 

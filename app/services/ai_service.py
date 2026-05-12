@@ -1,18 +1,448 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
+import platform
 import re
-import subprocess
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import AsyncGenerator, Any
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+from ..domain.agent_message import AgentMessage, TextBlock, ToolCallBlock, ToolResultBlock
 from ..domain.block import Block
+from .agent_tools import TOOL_REGISTRY, AgentTool, ToolResult
 
 
-# ── simple one-shot worker (explain / fix / translate) ────────────────────
+# ── agent step (streamed to UI) ───────────────────────────────────────────────
+
+@dataclass
+class AgentStep:
+    type: str   # "text_delta" | "tool_call" | "tool_call_start" | "tool_call_end" | "turn_complete" | "error"
+    data: Any = None
+
+
+# ── system prompt ─────────────────────────────────────────────────────────────
+
+def _build_system_prompt(cwd: str) -> str:
+    shell = os.environ.get("SHELL", "bash")
+    home  = str(Path.home())
+    try:
+        entries    = sorted(os.listdir(cwd))[:20]
+        dir_lines  = "\n".join(
+            f"  {'/' if os.path.isdir(os.path.join(cwd, e)) else ''}{e}"
+            for e in entries
+        )
+    except OSError:
+        dir_lines = "  (unreadable)"
+
+    return f"""You are a terminal assistant embedded in Blocksh, a block-based terminal emulator.
+
+## Environment
+- OS: {platform.system()} {platform.release()}
+- Shell: {shell}
+- Working directory: {cwd}
+- Home: {home}
+
+## Current directory
+{dir_lines}
+
+## Tools
+You have: read_file, list_dir, search_files, run_command, ask_user.
+Always use tools for accurate information — never guess file contents.
+Use read_file with start_line/end_line for large files.
+
+## Response style
+- Be concise and developer-focused
+- Use markdown: **bold**, `code`, fenced code blocks with language tags
+- Read files before explaining them
+- For errors: show the exact fix, not just the diagnosis
+- If producing a shell command for the user, put it on its own line starting with CMD:
+"""
+
+
+# ── message converters ────────────────────────────────────────────────────────
+
+def _msgs_to_anthropic(messages: list[AgentMessage]) -> list[dict]:
+    out: list[dict] = []
+    for msg in messages:
+        if msg.role == "user":
+            tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
+            text_blocks  = [b for b in msg.content if isinstance(b, TextBlock)]
+            if tool_results:
+                out.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type":        "tool_result",
+                            "tool_use_id": b.tool_call_id,
+                            "content":     b.content,
+                            "is_error":    b.is_error,
+                        }
+                        for b in tool_results
+                    ],
+                })
+            if text_blocks:
+                out.append({"role": "user", "content": "\n".join(b.text for b in text_blocks)})
+        elif msg.role == "assistant":
+            content: list[dict] = []
+            for block in msg.content:
+                if isinstance(block, TextBlock) and block.text:
+                    content.append({"type": "text", "text": block.text})
+                elif isinstance(block, ToolCallBlock):
+                    content.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.args})
+            if content:
+                out.append({"role": "assistant", "content": content})
+    return out
+
+
+def _msgs_to_ollama(messages: list[AgentMessage], system: str) -> list[dict]:
+    out: list[dict] = [{"role": "system", "content": system}]
+    for msg in messages:
+        if msg.role == "user":
+            tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
+            text_blocks  = [b for b in msg.content if isinstance(b, TextBlock)]
+            for b in tool_results:
+                out.append({"role": "tool", "content": b.content})
+            if text_blocks:
+                out.append({"role": "user", "content": "\n".join(b.text for b in text_blocks)})
+        elif msg.role == "assistant":
+            text  = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock))
+            calls = [
+                {"function": {"name": b.name, "arguments": b.args}}
+                for b in msg.content if isinstance(b, ToolCallBlock)
+            ]
+            entry: dict = {"role": "assistant", "content": text}
+            if calls:
+                entry["tool_calls"] = calls
+            out.append(entry)
+    return out
+
+
+def _msgs_to_openai(messages: list[AgentMessage], system: str) -> list[dict]:
+    out: list[dict] = [{"role": "system", "content": system}]
+    for msg in messages:
+        if msg.role == "user":
+            tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
+            text_blocks  = [b for b in msg.content if isinstance(b, TextBlock)]
+            for b in tool_results:
+                out.append({"role": "tool", "tool_call_id": b.tool_call_id, "content": b.content})
+            if text_blocks:
+                out.append({"role": "user", "content": "\n".join(b.text for b in text_blocks)})
+        elif msg.role == "assistant":
+            text  = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock))
+            calls = [
+                {
+                    "id":       b.id,
+                    "type":     "function",
+                    "function": {"name": b.name, "arguments": json.dumps(b.args)},
+                }
+                for b in msg.content if isinstance(b, ToolCallBlock)
+            ]
+            entry: dict = {"role": "assistant", "content": text}
+            if calls:
+                entry["tool_calls"] = calls
+            out.append(entry)
+    return out
+
+
+# ── backends ──────────────────────────────────────────────────────────────────
+
+class BaseBackend:
+    async def stream(
+        self,
+        messages: list[AgentMessage],
+        system: str,
+        tools: list[AgentTool],
+    ) -> AsyncGenerator[AgentStep, None]:
+        raise NotImplementedError
+
+    async def complete(self, prompt: str) -> str:
+        raise NotImplementedError
+
+
+class _AnthropicBackend(BaseBackend):
+    def __init__(self, api_key: str, model: str) -> None:
+        self._api_key = api_key
+        self._model   = model
+
+    async def complete(self, prompt: str) -> str:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=self._api_key)
+        msg = await client.messages.create(
+            model=self._model, max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text
+
+    async def stream(self, messages, system, tools) -> AsyncGenerator[AgentStep, None]:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=self._api_key)
+        anthropic_tools = [
+            {"name": t.name, "description": t.description, "input_schema": t.parameters}
+            for t in tools
+        ]
+        async with client.messages.stream(
+            model=self._model, max_tokens=4096, system=system,
+            messages=_msgs_to_anthropic(messages),
+            tools=anthropic_tools,
+        ) as s:
+            async for text in s.text_stream:
+                yield AgentStep("text_delta", text)
+            final = await s.get_final_message()
+            for block in final.content:
+                if block.type == "tool_use":
+                    yield AgentStep("tool_call", {"id": block.id, "name": block.name, "args": block.input})
+
+
+class _OllamaBackend(BaseBackend):
+    def __init__(self, host: str, model: str) -> None:
+        self._host  = host.rstrip("/")
+        self._model = model
+
+    async def complete(self, prompt: str) -> str:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{self._host}/api/generate",
+                json={"model": self._model, "prompt": prompt, "stream": False},
+                timeout=60.0,
+            )
+            r.raise_for_status()
+            return r.json()["response"]
+
+    async def stream(self, messages, system, tools) -> AsyncGenerator[AgentStep, None]:
+        import httpx
+        ollama_tools = [
+            {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}}
+            for t in tools
+        ]
+        payload = {
+            "model":    self._model,
+            "messages": _msgs_to_ollama(messages, system),
+            "tools":    ollama_tools,
+            "stream":   True,
+        }
+        async with httpx.AsyncClient() as client:
+            async with client.stream("POST", f"{self._host}/api/chat", json=payload, timeout=120.0) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = data.get("message", {})
+                    if delta.get("content"):
+                        yield AgentStep("text_delta", delta["content"])
+                    for i, tc in enumerate(delta.get("tool_calls") or []):
+                        fn   = tc.get("function", {})
+                        args = fn.get("arguments", {})
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                args = {"raw": args}
+                        yield AgentStep("tool_call", {
+                            "id":   tc.get("id") or f"ollama_{i}_{uuid4().hex[:6]}",
+                            "name": fn.get("name", ""),
+                            "args": args,
+                        })
+
+
+class _OllamaPingBackend:
+    def complete(self, _: str) -> str:
+        try:
+            import httpx
+        except ImportError:
+            raise RuntimeError("httpx not installed")
+        httpx.get(self._host, timeout=5.0).raise_for_status()
+        return "ok"
+
+    def __init__(self, host: str) -> None:
+        self._host = host.rstrip("/")
+
+
+class _OpenAiBackend(BaseBackend):
+    def __init__(self, api_key: str, model: str) -> None:
+        self._api_key = api_key
+        self._model   = model
+
+    async def complete(self, prompt: str) -> str:
+        import openai
+        client = openai.AsyncOpenAI(api_key=self._api_key)
+        r = await client.chat.completions.create(
+            model=self._model, max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return r.choices[0].message.content
+
+    async def stream(self, messages, system, tools) -> AsyncGenerator[AgentStep, None]:
+        import openai
+        client = openai.AsyncOpenAI(api_key=self._api_key)
+        oai_tools = [
+            {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}}
+            for t in tools
+        ]
+        tc_buffers: dict[int, dict] = {}
+        stream = await client.chat.completions.create(
+            model=self._model, max_tokens=4096,
+            messages=_msgs_to_openai(messages, system),
+            tools=oai_tools, stream=True,
+        )
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield AgentStep("text_delta", delta.content)
+            for tc in (delta.tool_calls or []):
+                idx = tc.index
+                if idx not in tc_buffers:
+                    tc_buffers[idx] = {"id": "", "name": "", "args": ""}
+                if tc.id:
+                    tc_buffers[idx]["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        tc_buffers[idx]["name"] = tc.function.name
+                    if tc.function.arguments:
+                        tc_buffers[idx]["args"] += tc.function.arguments
+        for idx in sorted(tc_buffers.keys()):
+            buf = tc_buffers[idx]
+            try:
+                args = json.loads(buf["args"]) if buf["args"] else {}
+            except json.JSONDecodeError:
+                args = {"raw": buf["args"]}
+            yield AgentStep("tool_call", {"id": buf["id"] or f"oai_{idx}", "name": buf["name"], "args": args})
+
+
+# ── tool execution ────────────────────────────────────────────────────────────
+
+async def _exec_tool(
+    tc: ToolCallBlock,
+    cwd: str,
+    permission_cb,   # callable(str) -> bool  (blocking, runs in thread)
+    ask_cb,          # callable(str) -> str   (blocking, runs in thread)
+) -> ToolResultBlock:
+    tool = TOOL_REGISTRY.get(tc.name)
+    if tool is None:
+        return ToolResultBlock(tool_call_id=tc.id, content=f"Unknown tool: {tc.name}", is_error=True)
+
+    args = {**tc.args, "cwd": cwd}
+
+    if tc.name == "run_command":
+        if permission_cb is None:
+            return ToolResultBlock(tool_call_id=tc.id, content="run_command not available (no permission callback).", is_error=True)
+        granted = await asyncio.to_thread(permission_cb, args.get("command", ""))
+        if not granted:
+            return ToolResultBlock(tool_call_id=tc.id, content="User denied permission.", is_error=False)
+
+    if tc.name == "ask_user":
+        if ask_cb is None:
+            return ToolResultBlock(tool_call_id=tc.id, content="ask_user not available.", is_error=True)
+        question = args.get("question", "")
+        answer   = await asyncio.to_thread(ask_cb, question)
+        return ToolResultBlock(tool_call_id=tc.id, content=answer or "(no answer)", is_error=False)
+
+    try:
+        sig   = inspect.signature(tool.call)
+        valid = {k: v for k, v in args.items() if k in sig.parameters}
+        result = await asyncio.to_thread(tool.call, **valid)
+    except Exception as exc:
+        return ToolResultBlock(tool_call_id=tc.id, content=f"Tool error: {exc}", is_error=True)
+
+    return ToolResultBlock(tool_call_id=tc.id, content=result.content, is_error=result.is_error)
+
+
+# ── AgentSession ──────────────────────────────────────────────────────────────
+
+_MAX_TURNS = 30
+
+
+class AgentSession:
+    """Persistent multi-turn conversation session."""
+
+    def __init__(self, backend: BaseBackend, cwd: str) -> None:
+        self._backend  = backend
+        self._cwd      = cwd
+        self._messages: list[AgentMessage] = []
+        self._system   = _build_system_prompt(cwd)
+        self.session_id = str(uuid4())
+
+    def update_cwd(self, cwd: str) -> None:
+        self._cwd   = cwd
+        self._system = _build_system_prompt(cwd)
+
+    def clear(self) -> None:
+        self._messages.clear()
+
+    @property
+    def messages(self) -> list[AgentMessage]:
+        return list(self._messages)
+
+    async def send(
+        self,
+        user_text: str,
+        permission_cb=None,
+        ask_cb=None,
+    ) -> AsyncGenerator[AgentStep, None]:
+        self._messages.append(
+            AgentMessage(role="user", content=[TextBlock(text=user_text)])
+        )
+
+        for _ in range(_MAX_TURNS):
+            assistant_msg = AgentMessage(role="assistant")
+            tool_calls:  list[ToolCallBlock] = []
+
+            async for chunk in self._backend.stream(
+                self._messages, self._system, list(TOOL_REGISTRY.values())
+            ):
+                if chunk.type == "text_delta":
+                    if (not assistant_msg.content or
+                            not isinstance(assistant_msg.content[-1], TextBlock)):
+                        assistant_msg.content.append(TextBlock(text=""))
+                    assistant_msg.content[-1].text += chunk.data
+                    yield chunk
+                elif chunk.type == "tool_call":
+                    tc = ToolCallBlock(
+                        id=chunk.data["id"],
+                        name=chunk.data["name"],
+                        args=chunk.data["args"],
+                    )
+                    assistant_msg.content.append(tc)
+                    tool_calls.append(tc)
+                    yield AgentStep("tool_call_start", {"name": tc.name, "args": tc.args})
+
+            self._messages.append(assistant_msg)
+
+            if not tool_calls:
+                yield AgentStep("turn_complete")
+                return
+
+            result_blocks: list[ToolResultBlock] = []
+            for tc in tool_calls:
+                rb = await _exec_tool(tc, self._cwd, permission_cb, ask_cb)
+                result_blocks.append(rb)
+                yield AgentStep("tool_call_end", {
+                    "name":     tc.name,
+                    "result":   rb.content[:200],
+                    "is_error": rb.is_error,
+                })
+
+            self._messages.append(
+                AgentMessage(role="user", content=result_blocks)
+            )
+
+        yield AgentStep("error", "Maximum reasoning steps reached.")
+
+
+# ── one-shot worker (explain / fix / translate) ───────────────────────────────
 
 class _AiWorker(QThread):
     result_ready   = Signal(str)
@@ -25,435 +455,56 @@ class _AiWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = self._backend.complete(self._prompt)
+            if asyncio.iscoroutinefunction(getattr(self._backend, "complete", None)):
+                result = asyncio.run(self._backend.complete(self._prompt))
+            else:
+                result = self._backend.complete(self._prompt)
             self.result_ready.emit(result.strip())
         except Exception as exc:
             self.error_occurred.emit(str(exc))
 
 
-# ── agent step dataclasses ────────────────────────────────────────────────
+# ── agent worker (multi-turn streaming) ──────────────────────────────────────
 
-@dataclass
-class ToolCall:
-    id:   str
-    name: str
-    args: dict
+def _args_preview(args: dict) -> str:
+    if not args:
+        return ""
+    if len(args) == 1:
+        return str(next(iter(args.values())))
+    return ", ".join(f"{k}={v}" for k, v in args.items())
 
-
-@dataclass
-class AgentStep:
-    text:        str
-    tool_calls:  list[ToolCall] = field(default_factory=list)
-    raw_content: list[dict]     = field(default_factory=list)
-
-
-# ── tool schemas (Anthropic format — converted per-backend in step()) ─────
-
-_AGENT_TOOLS: list[dict] = [
-    {
-        "name": "read_file",
-        "description": (
-            "Read the contents of a file. Use exact paths as returned by list_dir. "
-            "Only reads plain-text files up to 10 KB."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "File path relative to cwd or absolute"},
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "list_dir",
-        "description": (
-            "List the contents of a directory. Returns filenames with sizes. "
-            "Always call this before read_file to get the exact filename spelling."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Directory path. Use '.' for the working directory.",
-                    "default": ".",
-                },
-            },
-        },
-    },
-    {
-        "name": "run_command",
-        "description": (
-            "Run a shell command in the user's terminal. "
-            "Requires explicit user approval before executing. "
-            "Use only when reading files is not enough to fulfill the request."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Shell command to run"},
-            },
-            "required": ["command"],
-        },
-    },
-    {
-        "name": "ask_user",
-        "description": (
-            "Ask the user a clarifying question when the request is ambiguous "
-            "or you need more information before proceeding."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "question": {"type": "string", "description": "The clarifying question to ask"},
-            },
-            "required": ["question"],
-        },
-    },
-]
-
-_SYSTEM_PROMPT = """\
-You are a terminal assistant for the Blocksh terminal emulator.
-The user is working in: {cwd}
-
-Current directory contents:
-{cwd_listing}
-
-You have four tools: read_file, list_dir, run_command, ask_user.
-- Always call list_dir first to get exact filenames before calling read_file.
-- run_command requires user approval. Only use it when file reading is not enough.
-- Use ask_user when the request is ambiguous or you need clarification.
-- Answer in plain text. Be thorough, conversational, and developer-focused.
-- If the task is to produce a shell command for the user to run, end your response with:
-  CMD: <the shell command>
-"""
-
-
-# ── backends ──────────────────────────────────────────────────────────────
-
-class _OllamaBackend:
-    def __init__(self, host: str, model: str) -> None:
-        self._host  = host.rstrip("/")
-        self._model = model
-
-    def complete(self, prompt: str) -> str:
-        try:
-            import httpx
-        except ImportError:
-            raise RuntimeError("httpx not installed — run: pip install httpx")
-        r = httpx.post(
-            f"{self._host}/api/generate",
-            json={"model": self._model, "prompt": prompt, "stream": False},
-            timeout=60.0,
-        )
-        r.raise_for_status()
-        return r.json()["response"]
-
-    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
-        try:
-            import httpx
-        except ImportError:
-            raise RuntimeError("httpx not installed — run: pip install httpx")
-
-        ollama_msgs = [{"role": "system", "content": system}]
-        for msg in messages:
-            ollama_msgs.extend(_canonical_to_ollama(msg))
-
-        ollama_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": t["name"],
-                    "description": t["description"],
-                    "parameters": t["input_schema"],
-                },
-            }
-            for t in tools
-        ]
-
-        r = httpx.post(
-            f"{self._host}/api/chat",
-            json={
-                "model": self._model,
-                "messages": ollama_msgs,
-                "tools": ollama_tools,
-                "stream": False,
-            },
-            timeout=120.0,
-        )
-        r.raise_for_status()
-        msg = r.json()["message"]
-
-        calls: list[ToolCall] = []
-        raw_content: list[dict] = []
-
-        if msg.get("content"):
-            raw_content.append({"type": "text", "text": msg["content"]})
-
-        for i, tc in enumerate(msg.get("tool_calls") or []):
-            fn   = tc.get("function", {})
-            args = fn.get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except Exception:
-                    args = {"raw": args}
-            call_id = f"call_{i}"
-            calls.append(ToolCall(id=call_id, name=fn.get("name", ""), args=args))
-            raw_content.append({
-                "type": "tool_use",
-                "id": call_id,
-                "name": fn.get("name", ""),
-                "input": args,
-            })
-
-        return AgentStep(text=msg.get("content") or "", tool_calls=calls, raw_content=raw_content)
-
-
-class _OllamaPingBackend:
-    def __init__(self, host: str) -> None:
-        self._host = host.rstrip("/")
-
-    def complete(self, _: str) -> str:
-        try:
-            import httpx
-        except ImportError:
-            raise RuntimeError("httpx not installed")
-        httpx.get(self._host, timeout=5.0).raise_for_status()
-        return "ok"
-
-
-class _AnthropicBackend:
-    def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
-        self._api_key    = api_key
-        self._model      = model
-        self._max_tokens = max_tokens
-
-    def complete(self, prompt: str) -> str:
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("anthropic not installed — run: pip install anthropic")
-        client = anthropic.Anthropic(api_key=self._api_key)
-        msg = client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return msg.content[0].text
-
-    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("anthropic not installed — run: pip install anthropic")
-        client = anthropic.Anthropic(api_key=self._api_key)
-        # Canonical messages ARE Anthropic format — pass directly.
-        resp = client.messages.create(
-            model=self._model,
-            max_tokens=4096,
-            system=system,
-            messages=messages,
-            tools=tools,
-        )
-        text  = ""
-        calls: list[ToolCall] = []
-        raw:   list[dict]     = []
-        for block in resp.content:
-            block_dict = block.model_dump()
-            raw.append(block_dict)
-            if block.type == "text":
-                text = block.text
-            elif block.type == "tool_use":
-                calls.append(ToolCall(id=block.id, name=block.name, args=block.input))
-        return AgentStep(text=text, tool_calls=calls, raw_content=raw)
-
-
-class _OpenAiBackend:
-    def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
-        self._api_key    = api_key
-        self._model      = model
-        self._max_tokens = max_tokens
-
-    def complete(self, prompt: str) -> str:
-        try:
-            import openai
-        except ImportError:
-            raise RuntimeError("openai not installed — run: pip install openai")
-        client = openai.OpenAI(api_key=self._api_key)
-        r = client.chat.completions.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return r.choices[0].message.content
-
-    def step(self, system: str, messages: list[dict], tools: list[dict]) -> AgentStep:
-        try:
-            import openai
-        except ImportError:
-            raise RuntimeError("openai not installed — run: pip install openai")
-        client = openai.OpenAI(api_key=self._api_key)
-
-        oai_msgs: list[dict] = [{"role": "system", "content": system}]
-        for msg in messages:
-            oai_msgs.extend(_canonical_to_openai(msg))
-
-        oai_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": t["name"],
-                    "description": t["description"],
-                    "parameters": t["input_schema"],
-                },
-            }
-            for t in tools
-        ]
-
-        resp   = client.chat.completions.create(
-            model=self._model,
-            messages=oai_msgs,
-            tools=oai_tools,
-            tool_choice="auto",
-            max_tokens=4096,
-        )
-        choice = resp.choices[0]
-        calls: list[ToolCall] = []
-        raw_content: list[dict] = []
-
-        if choice.message.content:
-            raw_content.append({"type": "text", "text": choice.message.content})
-
-        for tc in (choice.message.tool_calls or []):
-            args = json.loads(tc.function.arguments)
-            calls.append(ToolCall(id=tc.id, name=tc.function.name, args=args))
-            raw_content.append({
-                "type": "tool_use",
-                "id": tc.id,
-                "name": tc.function.name,
-                "input": args,
-            })
-
-        return AgentStep(
-            text=choice.message.content or "",
-            tool_calls=calls,
-            raw_content=raw_content,
-        )
-
-
-# ── canonical ↔ backend message converters ────────────────────────────────
-
-def _canonical_to_ollama(msg: dict) -> list[dict]:
-    """Convert one canonical message to a list of Ollama messages."""
-    role    = msg["role"]
-    content = msg["content"]
-
-    if role == "user":
-        if isinstance(content, list):
-            # Tool results
-            return [
-                {"role": "tool", "content": block.get("content", "")}
-                for block in content
-                if block.get("type") == "tool_result"
-            ]
-        return [{"role": "user", "content": content}]
-
-    if role == "assistant":
-        if isinstance(content, list):
-            text       = ""
-            tool_calls = []
-            for block in content:
-                if block.get("type") == "text":
-                    text = block.get("text", "")
-                elif block.get("type") == "tool_use":
-                    tool_calls.append({
-                        "function": {
-                            "name":      block["name"],
-                            "arguments": block["input"],
-                        }
-                    })
-            out: dict = {"role": "assistant", "content": text}
-            if tool_calls:
-                out["tool_calls"] = tool_calls
-            return [out]
-        return [{"role": "assistant", "content": content}]
-
-    return [msg]
-
-
-def _canonical_to_openai(msg: dict) -> list[dict]:
-    """Convert one canonical message to a list of OpenAI messages."""
-    role    = msg["role"]
-    content = msg["content"]
-
-    if role == "user":
-        if isinstance(content, list):
-            return [
-                {
-                    "role":         "tool",
-                    "tool_call_id": block["tool_use_id"],
-                    "content":      block.get("content", ""),
-                }
-                for block in content
-                if block.get("type") == "tool_result"
-            ]
-        return [{"role": "user", "content": content}]
-
-    if role == "assistant":
-        if isinstance(content, list):
-            text       = ""
-            tool_calls = []
-            for block in content:
-                if block.get("type") == "text":
-                    text = block.get("text", "")
-                elif block.get("type") == "tool_use":
-                    tool_calls.append({
-                        "id":   block["id"],
-                        "type": "function",
-                        "function": {
-                            "name":      block["name"],
-                            "arguments": json.dumps(block["input"]),
-                        },
-                    })
-            out: dict = {"role": "assistant", "content": text}
-            if tool_calls:
-                out["tool_calls"] = tool_calls
-            return [out]
-        return [{"role": "assistant", "content": content}]
-
-    return [msg]
-
-
-# ── agent worker ──────────────────────────────────────────────────────────
 
 class AgentWorker(QThread):
-    tool_called       = Signal(str, str)        # tool_name, arg_preview
-    tool_result_ready = Signal(str, str, str)   # tool_name, arg_preview, short_result
-    permission_needed = Signal(str)             # command string waiting for approval
-    ask_user          = Signal(str)             # question waiting for user reply
-    final_answer      = Signal(str)             # plain-text answer to show inline
-    command_ready     = Signal(str)             # shell command → put in InputBar
+    text_delta        = Signal(str)
+    tool_call_start   = Signal(str, str)         # name, args_preview
+    tool_call_end     = Signal(str, str, bool)   # name, result_preview, is_error
+    turn_complete     = Signal()
+    permission_needed = Signal(str)              # command needing approval
+    user_asked        = Signal(str)              # question from ask_user tool
+    command_ready     = Signal(str)              # CMD: line for InputBar
+    final_answer      = Signal(str)              # full accumulated text (backward compat)
     error_occurred    = Signal(str)
 
-    _MAX_TURNS      = 15
-    _MAX_FILE_BYTES = 10_000
-    _MAX_LIST_ITEMS = 60
-    _PERM_TIMEOUT   = 120  # seconds
+    # backward-compat aliases
+    tool_called       = Signal(str, str)         # same as tool_call_start
+    tool_result_ready = Signal(str, str, str)    # name, args_preview, result_preview
+    ask_user          = Signal(str)              # same as user_asked
 
-    def __init__(self, request: str, cwd: str, backend) -> None:
+    _PERM_TIMEOUT = 120
+
+    def __init__(self, session: AgentSession, request: str) -> None:
         super().__init__()
-        self._request      = request
-        self._cwd          = cwd
-        self._backend      = backend
-        self._perm_event   = threading.Event()
-        self._perm_granted = False
-        self._ask_event    = threading.Event()
-        self._ask_answer   = ""
-        self._cancelled    = False
+        self._session    = session
+        self._request    = request
+        self._perm_event = threading.Event()
+        self._perm_ok    = False
+        self._ask_event  = threading.Event()
+        self._ask_answer = ""
+        self._cancelled  = False
+        self._full_text  = ""
 
     def grant_permission(self, allowed: bool) -> None:
-        self._perm_granted = allowed
+        self._perm_ok = allowed
         self._perm_event.set()
 
     def answer_question(self, answer: str) -> None:
@@ -465,205 +516,85 @@ class AgentWorker(QThread):
         self._perm_event.set()
         self._ask_event.set()
 
-    def run(self) -> None:
-        try:
-            self._loop()
-        except Exception as exc:
-            self.error_occurred.emit(str(exc))
+    # ── sync callbacks (run in thread-pool via asyncio.to_thread) ─────────────
 
-    # ── main loop ─────────────────────────────────────────────────────────
-
-    def _loop(self) -> None:
-        system   = _SYSTEM_PROMPT.format(cwd=self._cwd, cwd_listing=self._cwd_snapshot())
-        messages: list[dict] = [{"role": "user", "content": self._request}]
-
-        for _ in range(self._MAX_TURNS):
-            if self._cancelled:
-                return
-
-            step = self._backend.step(system, messages, _AGENT_TOOLS)
-
-            # Append assistant turn to canonical history
-            messages.append({"role": "assistant", "content": step.raw_content})
-
-            if not step.tool_calls:
-                text = step.text.strip()
-                cmd_match = re.search(r'^CMD:\s*(.+)$', text, re.MULTILINE)
-                if cmd_match:
-                    self.command_ready.emit(cmd_match.group(1).strip())
-                else:
-                    self.final_answer.emit(text or "(no response)")
-                return
-
-            # Execute tools and collect results for the next user turn
-            tool_results: list[dict] = []
-            for call in step.tool_calls:
-                arg_preview = _args_preview(call.args)
-                self.tool_called.emit(call.name, arg_preview)
-
-                result = self._dispatch_tool(call)
-                if result is None:
-                    # User denied — inform model and stop
-                    tool_results.append({
-                        "type":        "tool_result",
-                        "tool_use_id": call.id,
-                        "content":     "User denied permission.",
-                    })
-                    messages.append({"role": "user", "content": tool_results})
-                    self.final_answer.emit("Cancelled.")
-                    return
-
-                preview = result[:120].replace("\n", " ") + ("…" if len(result) > 120 else "")
-                self.tool_result_ready.emit(call.name, arg_preview, preview)
-                tool_results.append({
-                    "type":        "tool_result",
-                    "tool_use_id": call.id,
-                    "content":     result,
-                })
-
-            messages.append({"role": "user", "content": tool_results})
-
-        self.error_occurred.emit("Reached maximum reasoning steps without a final answer.")
-
-    def _dispatch_tool(self, call: ToolCall) -> str | None:
-        if call.name == "read_file":
-            return self._read_file(call.args.get("path", ""))
-        if call.name == "list_dir":
-            return self._list_dir(call.args.get("path", "."))
-        if call.name == "run_command":
-            return self._run_with_permission(call.args.get("command", ""))
-        if call.name == "ask_user":
-            return self._ask_with_permission(call.args.get("question", ""))
-        return f"Unknown tool: {call.name}"
-
-    # ── helpers ───────────────────────────────────────────────────────────
-
-    def _cwd_snapshot(self) -> str:
-        try:
-            entries = sorted(os.listdir(self._cwd))[:40]
-            lines   = []
-            for name in entries:
-                fp     = os.path.join(self._cwd, name)
-                suffix = "/" if os.path.isdir(fp) else ""
-                lines.append(f"  {name}{suffix}")
-            total = len(os.listdir(self._cwd))
-            if total > 40:
-                lines.append(f"  … ({total - 40} more)")
-            return "\n".join(lines)
-        except Exception:
-            return "  (unable to list)"
-
-    def _abs(self, path: str) -> str:
-        """Resolve path with case-insensitive fallback per component."""
-        path = os.path.expanduser(path.strip())
-        if not os.path.isabs(path):
-            path = os.path.join(self._cwd, path)
-        path = os.path.normpath(path)
-        if os.path.exists(path):
-            return path
-
-        parts    = path.split(os.sep)
-        resolved = os.sep
-        for part in parts[1:]:
-            if not part:
-                continue
-            exact = os.path.join(resolved, part)
-            if os.path.exists(exact):
-                resolved = exact
-            else:
-                try:
-                    lower = part.lower()
-                    match = next(
-                        (e for e in os.listdir(resolved) if e.lower() == lower), None
-                    )
-                    resolved = os.path.join(resolved, match if match else part)
-                except (PermissionError, NotADirectoryError, OSError):
-                    resolved = os.path.join(resolved, part)
-        return resolved
-
-    def _read_file(self, path: str) -> str:
-        full = self._abs(path)
-        try:
-            with open(full, "rb") as fh:
-                raw = fh.read(self._MAX_FILE_BYTES)
-            text = raw.decode("utf-8", errors="replace")
-            size = os.path.getsize(full)
-            if size > self._MAX_FILE_BYTES:
-                text += f"\n… [showing first {self._MAX_FILE_BYTES} of {size} bytes]"
-            return text
-        except Exception as exc:
-            return f"Error reading file: {exc}"
-
-    def _list_dir(self, path: str) -> str:
-        full = self._abs(path)
-        try:
-            rel_dir = os.path.relpath(full, self._cwd)
-            prefix  = "" if rel_dir == "." else rel_dir.rstrip("/") + "/"
-
-            entries = sorted(os.listdir(full))[: self._MAX_LIST_ITEMS]
-            lines   = []
-            for name in entries:
-                fp      = os.path.join(full, name)
-                display = prefix + name
-                if os.path.isdir(fp):
-                    lines.append(f"{display}/")
-                else:
-                    try:
-                        sz = os.path.getsize(fp)
-                        lines.append(f"{display}  ({sz:,} bytes)")
-                    except OSError:
-                        lines.append(display)
-            total  = len(os.listdir(full))
-            suffix = f"\n… ({total - self._MAX_LIST_ITEMS} more)" if total > self._MAX_LIST_ITEMS else ""
-            return ("\n".join(lines) or "(empty directory)") + suffix
-        except Exception as exc:
-            return f"Error listing directory: {exc}"
-
-    def _run_with_permission(self, command: str) -> str | None:
+    def _permission_cb(self, command: str) -> bool:
+        if self._cancelled:
+            return False
         self._perm_event.clear()
-        self._perm_granted = False
+        self._perm_ok = False
         self.permission_needed.emit(command)
-
         if not self._perm_event.wait(timeout=self._PERM_TIMEOUT):
-            return "Timeout — no response from user."
-        if self._cancelled or not self._perm_granted:
-            return None
+            return False
+        return not self._cancelled and self._perm_ok
 
-        try:
-            proc   = subprocess.run(
-                command, shell=True, capture_output=True, text=True,
-                timeout=30, cwd=self._cwd,
-            )
-            output = (proc.stdout + proc.stderr).strip() or "(no output)"
-            if len(output) > 3000:
-                output = output[:3000] + "\n… [truncated]"
-            return output
-        except subprocess.TimeoutExpired:
-            return "Command timed out after 30 seconds."
-        except Exception as exc:
-            return f"Error running command: {exc}"
-
-    def _ask_with_permission(self, question: str) -> str | None:
+    def _ask_cb(self, question: str) -> str:
+        if self._cancelled:
+            return ""
         self._ask_event.clear()
         self._ask_answer = ""
+        self.user_asked.emit(question)
         self.ask_user.emit(question)
         if not self._ask_event.wait(timeout=self._PERM_TIMEOUT):
-            return "Timeout — user did not reply."
-        if self._cancelled:
-            return None
-        return self._ask_answer or "(no answer provided)"
+            return "Timeout"
+        return self._ask_answer
+
+    # ── thread entry ──────────────────────────────────────────────────────────
+
+    def run(self) -> None:
+        try:
+            asyncio.run(self._async_loop())
+        except Exception as exc:
+            if not self._cancelled:
+                self.error_occurred.emit(str(exc))
+
+    async def _async_loop(self) -> None:
+        try:
+            async for step in self._session.send(
+                self._request,
+                permission_cb=self._permission_cb,
+                ask_cb=self._ask_cb,
+            ):
+                if self._cancelled:
+                    return
+
+                if step.type == "text_delta":
+                    self._full_text += step.data
+                    self.text_delta.emit(step.data)
+
+                elif step.type == "tool_call_start":
+                    name    = step.data["name"]
+                    preview = _args_preview(step.data["args"])
+                    self.tool_call_start.emit(name, preview)
+                    self.tool_called.emit(name, preview)
+
+                elif step.type == "tool_call_end":
+                    name    = step.data["name"]
+                    preview = step.data["result"]
+                    is_err  = step.data["is_error"]
+                    self.tool_call_end.emit(name, preview, is_err)
+                    self.tool_result_ready.emit(name, "", preview)
+
+                elif step.type == "turn_complete":
+                    self.turn_complete.emit()
+                    text      = self._full_text.strip()
+                    cmd_match = re.search(r"^CMD:\s*(.+)$", text, re.MULTILINE)
+                    if cmd_match:
+                        self.command_ready.emit(cmd_match.group(1).strip())
+                    else:
+                        self.final_answer.emit(text or "(no response)")
+                    return
+
+                elif step.type == "error":
+                    self.error_occurred.emit(str(step.data))
+                    return
+
+        except Exception as exc:
+            if not self._cancelled:
+                self.error_occurred.emit(str(exc))
 
 
-def _args_preview(args: dict) -> str:
-    """Return a compact single-value preview of tool args for UI display."""
-    if not args:
-        return ""
-    if len(args) == 1:
-        return str(next(iter(args.values())))
-    return ", ".join(f"{k}={v}" for k, v in args.items())
-
-
-# ── service ───────────────────────────────────────────────────────────────
+# ── AiService singleton ───────────────────────────────────────────────────────
 
 class AiService(QObject):
     _instance: AiService | None = None
@@ -700,9 +631,6 @@ class AiService(QObject):
         )
         return _AiWorker(prompt, self._get_backend())
 
-    def agent_chat(self, request: str, cwd: str) -> AgentWorker:
-        return AgentWorker(request, cwd, self._get_backend())
-
     def translate(self, text: str, cwd: str) -> _AiWorker:
         prompt = (
             "You are a shell expert. Convert this request to a single shell command.\n"
@@ -715,7 +643,13 @@ class AiService(QObject):
     def check_ollama(self, host: str) -> _AiWorker:
         return _AiWorker("", _OllamaPingBackend(host))
 
-    def _get_backend(self):
+    def create_session(self, cwd: str) -> AgentSession:
+        return AgentSession(self._get_backend(), cwd)
+
+    def agent_chat(self, session: AgentSession, request: str) -> AgentWorker:
+        return AgentWorker(session, request)
+
+    def _get_backend(self) -> BaseBackend:
         from .settings_service import SettingsService
         s = SettingsService.instance().get()
         if s.ai_backend == "anthropic":
