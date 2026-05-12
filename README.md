@@ -11,13 +11,13 @@
 [![Platform](https://img.shields.io/badge/Linux-Compatible-a6e3a1?style=for-the-badge&logo=linux&logoColor=white&labelColor=0d0f1a)](https://kernel.org)
 [![Theme](https://img.shields.io/badge/Catppuccin-Mocha-cba6f7?style=for-the-badge&labelColor=0d0f1a)](https://catppuccin.com)
 [![PTY](https://img.shields.io/badge/PTY-Full%20Support-89dceb?style=for-the-badge&labelColor=0d0f1a)](https://en.wikipedia.org/wiki/Pseudoterminal)
-[![Version](https://img.shields.io/badge/version-v0.2.0-fab387?style=for-the-badge&labelColor=0d0f1a)](https://github.com/rhaymisonbetini/Blocksh/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.0-fab387?style=for-the-badge&labelColor=0d0f1a)](https://github.com/rhaymisonbetini/Blocksh/releases)
 
 <br>
 
 <p>
-  A <strong>Warp-inspired</strong>, block-based terminal emulator with full PTY support.<br>
-  Built for developers who demand precision, context, and control over every command.
+  A <strong>Warp-inspired</strong>, block-based terminal emulator with full PTY support,<br>
+  SSH manager, command workflows, split panes, and a streaming AI assistant.
 </p>
 
 <br>
@@ -72,6 +72,12 @@ rm ~/.local/bin/Blocksh.AppImage \
 - [What is Blocksh?](#what-is-blocksh)
 - [Screenshots](#screenshots)
 - [Features](#features)
+- [AI Assistant](#ai-assistant)
+- [SSH Manager](#ssh-manager)
+- [Command Workflows](#command-workflows)
+- [Split Panes](#split-panes)
+- [Command Palette](#command-palette)
+- [Clickable URLs & Paths](#clickable-urls--paths)
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
@@ -89,7 +95,14 @@ rm ~/.local/bin/Blocksh.AppImage \
 
 Built entirely in Python with **PySide6**, Blocksh runs as a native desktop application on Linux with full **PTY (pseudo-terminal)** support for interactive programs: `vim`, `htop`, `ssh`, and AI agents like `claude`.
 
-Starting from **v0.2.0**, Blocksh also ships a complete **Settings panel** with a live theme creator, font/cursor customization, shell and scrollback configuration, profile photo support, and full data management — all persisted in `~/.blocksh/settings.json`.
+Since v0.2.0, Blocksh has shipped many more features across subsequent releases:
+- **AI Assistant** (v0.3.0 → v0.9.0) — streaming multi-turn agent with file reading, directory listing, search, and command execution; powered by Ollama, Anthropic, or OpenAI
+- **Command Palette** (v0.5.0) — `Ctrl+P` fuzzy search across full command history
+- **Clickable URLs & paths** (v0.5.1) — click any URL or file path in output to open it
+- **`.env` auto-loading** (v0.5.2) — per-project environment variables loaded automatically on `cd`
+- **SSH Manager** (v0.5.3) — save, organize, and one-click connect to SSH servers from the sidebar
+- **Command Workflows** (v0.6.0) — reusable command sequences with variable substitution
+- **Split Panes** (v0.7.0) — divide any tab into horizontal or vertical panes, each with its own shell
 
 > *"Not just a terminal. A workspace for the command line."*
 
@@ -103,20 +116,40 @@ Starting from **v0.2.0**, Blocksh also ships a complete **Settings panel** with 
 <tr>
 <td align="center" width="50%">
 
-**Clean Workspace**
+**Full Navigation Sidebar**
 
-<img src="img_samples/Screenshot%20from%202026-05-08%2015-07-29.png" alt="Blocksh — Clean Interface" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-12%2010-33-17.png" alt="Blocksh — Sidebar with SSH and Workflows" width="100%">
 
-*Collapsible sidebar, tab system, and the `run something great...` prompt*
+*Terminal · History · Favorites · Projects · SSH · Workflows — plus Settings, Themes, and profile avatar*
 
 </td>
 <td align="center" width="50%">
 
-**Command Blocks in Action**
+**Settings — AI Assistant & Theme Creator**
 
-<img src="img_samples/Screenshot%20from%202026-05-08%2015-07-56.png" alt="Blocksh — Command Blocks" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-12%2010-33-30.png" alt="Blocksh — Settings with AI configuration" width="100%">
 
-*Icon-only sidebar, ANSI-colored output blocks with timestamps and directory context*
+*Configure Ollama backend, model, and host; live theme color picker with user theme management*
+
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+
+**AI Assistant — Streaming Conversation**
+
+<img src="img_samples/Screenshot%20from%202026-05-12%2010-34-20.png" alt="Blocksh — AI Assistant floating panel" width="100%">
+
+*Floating AI panel with markdown rendering, tool call indicators, and persistent conversation history*
+
+</td>
+<td align="center" width="50%">
+
+**AI + Terminal Side by Side**
+
+<img src="img_samples/Screenshot%20from%202026-05-12%2010-35-02.png" alt="Blocksh — Terminal and AI Assistant split view" width="100%">
+
+*AI reads and explains files from your filesystem while the terminal runs commands below*
 
 </td>
 </tr>
@@ -146,6 +179,7 @@ Interactive programs are automatically routed to a real **PTY canvas**:
 - Covers `vim`, `nano`, `htop`, `ssh`, `claude`, Python REPL, Node.js, and more
 - Direct `QPainter`-based cell rendering — no HTML, no Qt layout engine overhead
 - Powered by `pyte` for accurate VT100/VT220 terminal emulation
+- Exit banner shown on PTY close with full scrollback history captured
 
 ### Persistent History
 - All commands stored in `~/.blocksh/history.db` (SQLite)
@@ -154,7 +188,7 @@ Interactive programs are automatically routed to a real **PTY canvas**:
 - Configurable retention policy (7 / 30 / 90 days or forever)
 
 ### Favorites & Projects
-- **Favorites** — pin reusable commands with a name and cwd
+- **Favorites** — pin reusable commands with a name and cwd; edit, rename, and delete via the ⋮ menu
 - **Projects** — auto-detected from directory markers:
   - `.git` → Git
   - `package.json` → Node.js
@@ -164,42 +198,184 @@ Interactive programs are automatically routed to a real **PTY canvas**:
   - `composer.json` → PHP
 
 ### Collapsible Sidebar
-The sidebar can be collapsed to a **48px icon-only strip** by clicking the `«` button at the top:
+The sidebar can be collapsed to a **48px icon-only strip** by clicking the `«` button:
 - Smooth 200ms ease animation
-- All nav icons remain clickable with tooltips showing the action name
-- Sub-pages (History, Favorites, Projects) auto-expand the sidebar before navigating
+- All nav icons remain clickable with tooltips
+- Sub-pages auto-expand the sidebar before navigating
 - Click `»` to restore full width
 
 ### Settings Panel
-A full-width settings workspace (replaces the terminal area while open) with four sections:
+A full-width settings workspace with five sections:
 
 | Section | What you can configure |
 |---------|----------------------|
 | **Appearance** | Font family (monospace filter), terminal/output font size, cursor style (block / underline / beam), output text color override, profile photo |
-| **Terminal Behavior** | Default shell, scrollback lines, history load limit, auto-scroll, history retention |
+| **Terminal Behavior** | Default shell, scrollback lines, history load limit, auto-scroll, history retention, `.env` file loading policy |
+| **AI Assistant** | Enable/disable AI, backend (Ollama / Anthropic / OpenAI), host URL, model name, live status check |
 | **Theme Creator** | 24-field color picker with live preview, save/delete user themes |
 | **Data Management** | Clear history / favorites / projects / all data, export history to JSON |
 
-Open settings via the `⚙` button in the TabBar or the **Settings** item in the sidebar nav.
-
 ### Profile Photo & Avatar
 - Set a profile photo in **Settings → Appearance → Profile photo**
-- The circular avatar in the top-right TabBar updates instantly — shows your photo or your initials with a themed fallback
+- The circular avatar in the top-right TabBar updates instantly
 - Clicking the avatar also opens Settings
 
-### Intelligent `cd` Handling
-`cd` commands are intercepted before execution. Path resolution happens in Python via `ShellSession.try_cd()`, updating the internal cwd. Subsequent commands inherit the correct directory without spawning a subprocess.
+---
 
-### Tab Completion
-File and path completions via `CompletionPopup` — a floating overlay triggered by `Tab` in the input bar.
+## AI Assistant
 
-### Theming Engine
-- **ThemeManager** singleton broadcasts `theme_changed(Palette)` signal
-- Built-in: `dark` (Catppuccin Mocha) and `light` (Catppuccin Latte)
-- User themes: create via the in-app **Theme Creator** or drop any compliant JSON into `~/.blocksh/themes/`
+The **AI Assistant** is a floating panel that opens over the terminal. It runs a full multi-turn agent loop with access to your filesystem — not just a chatbot.
 
-### Integrated Search
-`Ctrl+F` toggles the `SearchBar` within the active terminal panel.
+### How to open
+
+Click the robot icon (`🤖`) in the TabBar, or use the keyboard shortcut (configurable in Settings).
+
+### What it can do
+
+| Capability | Example prompt |
+|-----------|---------------|
+| **Read files** | "explain app/services/ai_service.py" |
+| **List directories** | "what files are in the app/ui folder?" |
+| **Search code** | "find all usages of PtyProcess" |
+| **Run commands** | "run the tests and show me the output" |
+| **Multi-turn conversation** | "now look at the same pattern in pty_widget.py" |
+
+The agent uses **tool calls** to perform each action — you see the tool name and result inline as it works, before the final answer appears.
+
+### Streaming
+
+Responses stream word by word as the model generates them. Tool calls appear immediately when invoked, with their result shown before the model continues reasoning. The input bar is disabled during streaming and re-enabled automatically.
+
+### Backends
+
+Configure in **Settings → AI Assistant**:
+
+| Backend | When to use |
+|---------|------------|
+| **Ollama (offline)** | Local models — `llama3.2`, `codellama`, etc. No API key required |
+| **Anthropic** | Claude models — requires `ANTHROPIC_API_KEY` |
+| **OpenAI** | GPT models — requires `OPENAI_API_KEY` |
+
+The status indicator shows green when the backend is reachable.
+
+### Conversation persistence
+
+Each terminal tab has its own `AgentSession`. The message history is preserved across panel open/close within the same session. Click **New** to start a fresh conversation.
+
+---
+
+## SSH Manager
+
+Save SSH server configurations and connect with one click — no more typing `ssh user@host -p 2222 -i ~/.ssh/key` every time.
+
+### Adding a connection
+
+1. Open the **SSH** page in the sidebar
+2. Click the `+` button
+3. Fill in: name, host, user, port (default 22), optional key path, optional group
+4. Click **Save**
+
+### Connecting
+
+Click any saved connection — Blocksh launches a full PTY session with the correct `ssh` command including keepalive options (`ConnectTimeout=30`, `ServerAliveInterval=15`).
+
+### Managing connections
+
+Right-click any connection (or click ⋮) for **Edit** and **Delete** options.
+
+### Grouping
+
+Assign connections to groups (e.g., `production`, `staging`) to visually organize them in the list.
+
+---
+
+## Command Workflows
+
+**Workflows** are named sequences of shell commands that you can save, parameterize, and replay with one click.
+
+### Creating a workflow
+
+1. Open the **Workflows** page in the sidebar
+2. Click `+` and give the workflow a name
+3. Add one or more command steps — each step can contain `${VARIABLE}` placeholders
+4. Optionally configure each step's `on_error` behavior: `stop`, `continue`, or `ask`
+5. Save
+
+### Running a workflow
+
+Click any workflow — if it has variables, a dialog prompts you to fill in the values. Then each step runs as its own `CommandBlock` in the active terminal, in order.
+
+### Managing workflows
+
+Click ⋮ on any workflow for **Edit**, **Duplicate**, and **Delete** options.
+
+---
+
+## Split Panes
+
+Divide any terminal tab into multiple independent panels — each with its own shell session, cwd, and command history.
+
+### Splitting
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+\` | Split current pane **vertically** (side by side) |
+| `Ctrl+-` | Split current pane **horizontally** (top / bottom) |
+
+### Navigating
+
+- Click any pane to make it active (highlighted border)
+- `Ctrl+←` / `Ctrl+→` — move focus between panes
+
+### Closing
+
+- `Ctrl+Shift+W` — close the active pane
+- Click the `✕` button in the pane header
+
+Panes resize freely by dragging the splitter handle. When only one pane remains, the header disappears automatically.
+
+---
+
+## Command Palette
+
+Press `Ctrl+P` to open the **Command Palette** — a fuzzy-search overlay over the entire window that lets you find and re-run any past command instantly.
+
+- Searches the full SQLite command history in real time as you type
+- Results ranked by recency and frequency; boosted if cwd matches current directory
+- `Enter` — insert the selected command into the active input bar
+- `Ctrl+Enter` — insert and execute immediately
+- Results show command text, working directory, timestamp, and exit status
+
+---
+
+## Clickable URLs & Paths
+
+Command block output is scanned for URLs and file paths. Detected items are **underlined** and the cursor changes to a pointer on hover.
+
+| Pattern | Action on click |
+|---------|----------------|
+| `https://...` / `http://...` | Opens in default browser |
+| `http://localhost:PORT` | Opens in browser (highlighted distinctly) |
+| `/absolute/path/to/file.py` | Opens in `$EDITOR` / `xdg-open` |
+| `File "path.py", line N` (Python tracebacks) | Opens file at the exact line |
+
+No configuration required — detection is always on.
+
+---
+
+## `.env` Auto-loading
+
+When you `cd` into a directory that contains a `.env`, `.env.local`, or `.env.development` file, Blocksh can automatically load those variables into the current tab's shell environment.
+
+Configure the behavior in **Settings → Terminal Behavior → .env file loading**:
+
+| Option | Behaviour |
+|--------|-----------|
+| **Ask each time** | A prompt appears once per project |
+| **Always load** | Variables loaded silently on every `cd` |
+| **Never load** | Feature disabled |
+
+The decision is stored per-project path in SQLite — "Ask" only fires once per project, not on every navigation.
 
 ---
 
@@ -211,10 +387,12 @@ File and path completions via `CompletionPopup` — a floating overlay triggered
 ┌────────────────────────────────────────────────────────────────┐
 │                          app/ui/                               │
 │   MainWindow · Sidebar · TabBar · TerminalPanel(s)             │
-│   SettingsPanel · PtyWidget · ANSI renderers · ThemeManager    │
+│   SplitPaneContainer · PtyWidget · AiPanel · ThemeManager      │
+│   SettingsPanel · ANSI renderers                               │
 ├────────────────────────────────────────────────────────────────┤
 │                       app/services/                            │
 │   HistoryService · FavoritesService · ProjectService           │
+│   SshService · WorkflowService · AiService (AgentSession)      │
 │   SettingsService (singleton, emits settings_changed)          │
 ├────────────────────────────────────────────────────────────────┤
 │                        app/core/                               │
@@ -222,10 +400,11 @@ File and path completions via `CompletionPopup` — a floating overlay triggered
 ├────────────────────────────────────────────────────────────────┤
 │                        app/infra/                              │
 │   SQLite repositories · settings.py (paths) · DB_PATH         │
-│   SettingsRepository (JSON r/w to ~/.blocksh/settings.json)    │
+│   SettingsRepository · SshRepository · WorkflowRepository      │
 ├────────────────────────────────────────────────────────────────┤
 │                       app/domain/                              │
 │   Command · Block · Favorite · Project · AppSettings           │
+│   SshConnection · Workflow · WorkflowStep                      │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -234,27 +413,54 @@ File and path completions via `CompletionPopup` — a floating overlay triggered
 ```
 MainWindow
 ├── Sidebar                    (collapsible: 180px expanded / 48px icons-only)
-│   ├── page 0: nav buttons    (Terminal · History · Favorites · Projects · ⚙ Settings · Themes)
+│   ├── page 0: nav buttons    (Terminal · History · Favorites · Projects · SSH · Workflows · ⚙ Settings · Themes)
 │   ├── page 1: history list
 │   ├── page 2: themes list
 │   ├── page 3: favorites list
-│   └── page 4: projects list  (collapsible, with command sub-history)
+│   ├── page 4: projects list  (collapsible, with command sub-history)
+│   ├── page 5: SSH list       (saved connections + one-click connect)
+│   └── page 6: workflows list (saved command sequences)
 ├── TabBar                     (+ tab · tab labels · ⌕ search · ⊟ collapse-all · ⚙ settings · avatar)
 └── QStackedWidget (_right_stack)
     ├── page 0: terminal view
-    │   └── TerminalPanel      (one per tab — owns ShellSession + HistoryService)
-    │       ├── SearchBar      (hidden by default, Ctrl+F)
-    │       ├── QScrollArea → blocks_container
-    │       │   └── CommandBlock(s)  (card per executed command)
-    │       ├── separator QFrame
-    │       ├── InputBar       (QPlainTextEdit + Run button)
-    │       └── CompletionPopup (floating overlay, Tab-triggered)
-    └── page 1: settings view  (← Back header + SettingsPanel in QScrollArea)
-        └── SettingsPanel
-            ├── AppearanceSection  (font · cursor · output color · avatar)
-            ├── TerminalSection    (shell · scrollback · history · auto-scroll)
-            ├── ThemeCreatorSection (24-color picker · live preview · save/delete)
-            └── DataManagementSection (clear · export)
+    │   └── SplitPaneContainer  (one per tab — manages 1…N panes in a QSplitter tree)
+    │       └── _PaneWrapper(s) (header + close button per pane when >1 pane)
+    │           └── TerminalPanel  (owns ShellSession + HistoryService)
+    │               ├── SearchBar       (hidden, Ctrl+F)
+    │               ├── QScrollArea → blocks_container
+    │               │   └── CommandBlock(s)
+    │               ├── separator QFrame
+    │               ├── InputBar        (QPlainTextEdit + Run button)
+    │               ├── CompletionPopup (floating Tab-completion overlay)
+    │               └── PtyWidget       (floating PTY overlay, raised over layout)
+    ├── page 1: settings view
+    │   └── SettingsPanel
+    │       ├── AppearanceSection
+    │       ├── TerminalSection (+ .env policy)
+    │       ├── AiSection       (backend · host · model · status)
+    │       ├── ThemeCreatorSection
+    │       └── DataManagementSection
+    └── AiPanel                 (floating overlay, independent of tab layout)
+        ├── conversation view   (streaming message list)
+        └── input bar           (disabled during streaming)
+```
+
+### AI Agent Loop
+
+```
+AiPanel — user sends message
+    └─ AgentWorker (QThread)
+         └─ AgentSession.send(text)   ← AsyncGenerator
+              ├─ backend.stream(messages, system, tools)
+              │    ├─ text_delta      → AiPanel appends streaming text
+              │    └─ tool_call       → AiPanel shows tool call row
+              ├─ tool_executor.run(tool_call)
+              │    ├─ read_file       → returns file content with line numbers
+              │    ├─ list_dir        → returns directory listing
+              │    ├─ search_files    → grep/rg across codebase
+              │    ├─ run_command     → subprocess with timeout
+              │    └─ ask_user        → pauses loop, waits for UI response
+              └─ tool_result appended as user message → loop continues
 ```
 
 ### PTY Rendering Pipeline
@@ -270,19 +476,7 @@ PtyProcess (QThread)
                                   cell-by-cell: col × char_w, row × char_h
 ```
 
-> `_PtyCanvas` uses `WA_OpaquePaintEvent` and direct cell rendering. This replaced an earlier QTextEdit+HTML approach that caused UI trembling during high-frequency streaming.
-
-### Non-Interactive Command Flow
-
-```
-InputBar.submit
-    └─ TerminalPanel._on_command()
-         ├─ [built-in: clear] → clear UI blocks, stop
-         ├─ [built-in: cd]    → ShellSession.try_cd(), emit cwd_changed
-         └─ CommandThread (QThread)
-              └─ output_received(chunk) → CommandBlock.append_output()
-                   → Stop button revealed after 10 s
-```
+> `_PtyCanvas` uses `WA_OpaquePaintEvent` and direct cell rendering. On PTY exit, the full scrollback history (`screen.history.top`) is captured alongside the visible screen and emitted via `session_finished`.
 
 ### Settings Data Flow
 
@@ -308,8 +502,8 @@ SettingsPanel control change
 
 ```
 ~/.blocksh/
-├── history.db           ← SQLite: sessions · blocks · favorites · projects
-├── settings.json        ← AppSettings (font, cursor, shell, avatar_path, …)
+├── history.db           ← SQLite: sessions · blocks · favorites · projects · ssh_connections · workflows
+├── settings.json        ← AppSettings (font, cursor, shell, avatar_path, ai_backend, …)
 ├── theme_pref.json      ← Active theme name (persisted across restarts)
 └── themes/
     └── *.json           ← User-defined theme files (all Palette fields required)
@@ -353,6 +547,9 @@ No build step. No compiled assets. No database migrations — `~/.blocksh/` and 
 |---------|---------|------|
 | `PySide6` | ≥ 6.6.0 | Qt6 bindings — entire UI layer, signals, QThread |
 | `pyte`    | ≥ 0.8.0 | VT100/VT220 screen emulation for PTY mode |
+| `anthropic` | ≥ 0.25 | Anthropic Claude API (optional — AI Assistant) |
+
+> Ollama and OpenAI backends use only the standard library (`urllib`) — no extra packages required.
 
 ---
 
@@ -364,6 +561,10 @@ No build step. No compiled assets. No database migrations — `~/.blocksh/` and 
 | `Ctrl+W` | Close current tab |
 | `Ctrl+F` | Toggle search bar |
 | `Ctrl+L` | Clear all command blocks |
+| `Ctrl+\` | Split active pane vertically |
+| `Ctrl+-` | Split active pane horizontally |
+| `Ctrl+Shift+W` | Close active split pane |
+| `Ctrl+←` / `Ctrl+→` | Navigate between split panes |
 | `Escape` | Close Settings panel (if open) |
 | `Tab`    | Trigger path / file completion |
 | `↑` / `↓` | Navigate command history in the input bar |
@@ -410,7 +611,7 @@ All settings are persisted immediately to `~/.blocksh/settings.json` on every ch
 |-------|------|---------|-------------|
 | `font_family` | `str` | `"Monospace"` | Terminal font family (monospace fonts only) |
 | `font_size_terminal` | `int` | `10` | PTY canvas font size (pt) |
-| `font_size_output` | `int` | `9` | CommandBlock output font size (pt) |
+| `font_size_output` | `int` | `11` | CommandBlock output font size (pt) |
 | `cursor_style` | `str` | `"block"` | `"block"` · `"underline"` · `"beam"` |
 | `output_fg_override` | `str` | `""` | Hex color for CommandBlock text; empty = use theme `fg` |
 | `default_shell` | `str` | `"bash"` | Shell used for PTY sessions (sourced from `/etc/shells`) |
@@ -419,17 +620,22 @@ All settings are persisted immediately to `~/.blocksh/settings.json` on every ch
 | `auto_scroll` | `bool` | `True` | Scroll to latest output on new command |
 | `history_retention_days` | `int` | `0` | Days to keep history (0 = forever) |
 | `avatar_path` | `str` | `""` | Absolute path to profile photo (PNG/JPG/WebP) |
+| `ai_enabled` | `bool` | `True` | Enable or disable the AI Assistant |
+| `ai_backend` | `str` | `"ollama"` | `"ollama"` · `"anthropic"` · `"openai"` |
+| `ai_host` | `str` | `"http://localhost:11434"` | Base URL for Ollama |
+| `ai_model` | `str` | `"llama3.2"` | Model name for the selected backend |
+| `ai_api_key` | `str` | `""` | API key for Anthropic / OpenAI backends |
 
 > Shell and scrollback changes take effect on new terminal tabs; existing tabs are not affected.
 
 ### Theme Creator
 
-The **Theme Creator** section in Settings lets you build a fully custom theme without editing JSON by hand:
+The **Theme Creator** section in Settings lets you build a fully custom theme:
 
-1. All 24 color fields are displayed as clickable swatches with a live preview frame
+1. All 24 color fields are displayed as clickable swatches grouped by role (Backgrounds, Foreground, Semantic, PTY canvas, Borders)
 2. Click any swatch to open the system color picker
-3. Enter a name and click **Save theme** — the theme is saved to `~/.blocksh/themes/<name>.json` and immediately available in the Themes sidebar
-4. Existing user themes are listed below with a **Delete** button
+3. Enter a name and click **Save theme** — saved to `~/.blocksh/themes/<name>.json`, immediately available in the Themes sidebar
+4. Existing user themes listed below with **Delete** button (built-in themes cannot be deleted)
 
 ---
 
@@ -507,61 +713,77 @@ Activate via **Themes** in the sidebar — no restart required.
 ```
 .
 ├── run.py                        ← Entry point: python run.py
-├── requirements.txt              ← PySide6, pyte
+├── requirements.txt              ← PySide6, pyte, anthropic
 └── app/
     ├── main.py                   ← Bootstrap: DI wiring, QApplication launch
     ├── domain/                   ← Pure data models (zero external dependencies)
-    │   ├── command.py            ← Command(text, status, timestamp)
-    │   ├── block.py              ← Block(command + stdout/stderr/exit_code/cwd)
-    │   ├── favorite.py           ← Favorite(name, command_text, cwd)
-    │   ├── project.py            ← Project(name, path, type, uuid) · ProjectContext
-    │   └── settings.py           ← AppSettings(font, cursor, shell, scrollback, avatar_path, …)
-    ├── core/                     ← Execution engine (no Qt UI, no services imports)
-    │   ├── shell_session.py      ← cwd/env state, cd intercept, alias detection
-    │   ├── command_executor.py   ← BaseExecutor, SubprocessExecutor, CommandThread
-    │   └── pty_process.py        ← QThread: PTY runner, data_ready(bytes) signal
-    ├── services/                 ← Business logic layer
-    │   ├── history_service.py    ← Session history, dedup, in-memory cache
-    │   ├── favorites_service.py  ← CRUD wrapper over FavoritesRepository
-    │   ├── project_service.py    ← auto_register() on cwd_changed, type detection
-    │   └── settings_service.py   ← Singleton; update(**kwargs) → save + signal
-    ├── infra/                    ← Persistence and configuration
+    │   ├── command.py
+    │   ├── block.py
+    │   ├── favorite.py
+    │   ├── project.py
+    │   ├── settings.py           ← AppSettings (font, cursor, shell, ai_backend, …)
+    │   ├── ssh_connection.py     ← SshConnection(name, host, user, port, key_path, group)
+    │   └── workflow.py           ← Workflow + WorkflowStep(command_template, on_error)
+    ├── core/
+    │   ├── shell_session.py
+    │   ├── command_executor.py
+    │   └── pty_process.py
+    ├── services/
+    │   ├── history_service.py
+    │   ├── favorites_service.py
+    │   ├── project_service.py
+    │   ├── settings_service.py
+    │   ├── ssh_service.py        ← CRUD + to_command() builder
+    │   ├── workflow_service.py   ← CRUD + execute(workflow, variables)
+    │   └── ai_service.py        ← AgentSession · AgentWorker · backends (Ollama/Anthropic/OpenAI)
+    ├── infra/
     │   ├── config/
     │   │   └── settings.py       ← APP_DIR · DB_PATH · THEMES_DIR · SETTINGS_PATH
     │   └── storage/
-    │       ├── database.py       ← SQLite connection + schema init
+    │       ├── database.py
     │       ├── history_repository.py
     │       ├── favorites_repository.py
     │       ├── project_repository.py
-    │       └── settings_repository.py  ← JSON r/w, merges missing keys with defaults
-    └── ui/                       ← All PySide6 widgets
-        ├── main_window.py        ← Root window, DI entry point, _right_stack routing
-        ├── sidebar.py            ← Collapsible sidebar (« / »), QStackedWidget pages
-        ├── tab_bar.py            ← Tab management, ⚙ settings, circular avatar
-        ├── terminal_panel.py     ← Core terminal: PTY routing, command dispatch
-        ├── command_block.py      ← Per-command output card widget
-        ├── pty_widget.py         ← PTY overlay + _PtyCanvas (QPainter cell rendering)
-        ├── input_bar.py          ← QPlainTextEdit + Run button
-        ├── search_bar.py         ← Ctrl+F search overlay
-        ├── completion_popup.py   ← Floating Tab-completion overlay
-        ├── settings_panel.py     ← Settings UI: Appearance · Terminal · ThemeCreator · Data
-        ├── theme.py              ← Palette dataclass · ThemeManager · DARK · LIGHT
-        ├── ansi_renderer.py      ← Non-interactive ANSI → QTextCharFormat segments
-        └── ansi_colors.py        ← PTY color resolution: _resolve_color() / _256_to_hex()
+    │       ├── settings_repository.py
+    │       ├── ssh_repository.py
+    │       └── workflow_repository.py
+    └── ui/
+        ├── main_window.py
+        ├── sidebar.py            ← 7 pages: nav · history · themes · favorites · projects · SSH · workflows
+        ├── tab_bar.py
+        ├── terminal_panel.py
+        ├── split_pane_container.py  ← QSplitter tree + _PaneWrapper per pane
+        ├── command_block.py
+        ├── pty_widget.py
+        ├── ai_panel.py           ← Floating AI conversation overlay
+        ├── input_bar.py
+        ├── search_bar.py
+        ├── completion_popup.py
+        ├── settings_panel.py
+        ├── theme.py
+        ├── ansi_renderer.py
+        └── ansi_colors.py
 ```
 
 ---
 
 ## Roadmap
 
-| Sprint | Focus | Status |
-|--------|-------|--------|
-| Sprint 1 | PTY Core — arrow keys, Ctrl mapping, alternate screen buffer, bracketed paste | ✅ Done |
-| Sprint 2 | Streaming Output — `\r` progress bars, truecolor, OSC sequences, SGR attributes | ✅ Done |
-| Sprint 3 | Input & Shell — readline shortcuts, dynamic height, history dedup, PATH completion | ✅ Done |
-| Sprint 4 | Performance — PTY off main thread, dirty tracking, resize throttling, block height cap | ✅ Done |
-| Sprint 5 | Polish — box-drawing fonts, initial terminal size, Ctrl+C kill, scrollback ratio | ✅ Done |
-| v0.2.0   | Settings panel, Theme Creator, AppSettings, collapsible sidebar, profile avatar | ✅ Done |
+| Version | Focus | Status |
+|---------|-------|--------|
+| v0.0.x  | PTY core — arrow keys, Ctrl mapping, alternate screen, bracketed paste, streaming output | ✅ Done |
+| v0.1.x  | Input & shell — readline shortcuts, history dedup, PATH completion, performance, polish | ✅ Done |
+| v0.2.0  | Settings panel, Theme Creator, AppSettings, collapsible sidebar, profile avatar | ✅ Done |
+| v0.3.0  | AI agent with filesystem access, ASK tool, interactive PTY banner | ✅ Done |
+| v0.4.0  | Native tool-calling agent — proper multi-turn message history, Anthropic/OpenAI/Ollama | ✅ Done |
+| v0.5.0  | Command Palette (`Ctrl+P`) — fuzzy search over full history | ✅ Done |
+| v0.5.1  | Clickable URLs and file paths in command block output | ✅ Done |
+| v0.5.2  | `.env` auto-loading — per-project environment variables on `cd` | ✅ Done |
+| v0.5.3  | SSH Connection Manager — saved connections, one-click connect | ✅ Done |
+| v0.6.0  | Command Workflows — named sequences with `${VAR}` substitution | ✅ Done |
+| v0.7.x  | Split Panes — horizontal/vertical splits, active tracking, splitter collapse | ✅ Done |
+| v0.8.x  | CRUD visibility — ⋮ buttons always visible; PTY overlay fix; font size fix; sidebar scroll fix | ✅ Done |
+| v0.9.0  | AI Agent rewrite — streaming `AgentSession`, floating `AiPanel`, multi-turn context | ✅ Done |
 
 ---
 
