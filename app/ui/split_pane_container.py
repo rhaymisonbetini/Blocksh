@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from .terminal_panel import TerminalPanel
 from ..core.command_executor import BaseExecutor
 from ..infra.storage.history_repository import HistoryRepository
-from .theme import ThemeManager, Palette
+from .theme import ThemeManager, Palette, TY
 
 
 class _PaneWrapper(QWidget):
@@ -25,14 +25,14 @@ class _PaneWrapper(QWidget):
         layout.setSpacing(0)
 
         self._header = QWidget()
-        self._header.setFixedHeight(22)
+        self._header.setFixedHeight(28)
         h_layout = QHBoxLayout(self._header)
         h_layout.setContentsMargins(8, 0, 4, 0)
         h_layout.setSpacing(4)
 
         self._title_lbl = QLabel("Terminal")
         self._title_lbl.setStyleSheet(
-            "font-size: 8pt; background: transparent;"
+            f"font-size: {TY.sm}pt; background: transparent;"
         )
         h_layout.addWidget(self._title_lbl, 1)
 
@@ -46,6 +46,10 @@ class _PaneWrapper(QWidget):
         layout.addWidget(panel)
 
         self.set_active(False)
+
+    def set_title(self, cwd: str) -> None:
+        text = ("…" + cwd[-38:]) if len(cwd) > 40 else cwd
+        self._title_lbl.setText(text)
 
     def set_active(self, active: bool) -> None:
         self._active = active
@@ -74,11 +78,11 @@ class _PaneWrapper(QWidget):
         )
         self._title_lbl.setStyleSheet(
             f"color: {p.fg_muted if not active else p.fg};"
-            f" font-size: 8pt; background: transparent;"
+            f" font-size: {TY.sm}pt; background: transparent;"
         )
         self._close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: none; border-radius: 3px; font-size: 9pt; }}"
+            f" border: none; border-radius: 3px; font-size: {TY.base}pt; }}"
             f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
         )
         # Draw a left border on the active pane
@@ -91,9 +95,10 @@ class _PaneWrapper(QWidget):
 class SplitPaneContainer(QWidget):
     """Manages one or more TerminalPanel instances in a splitter tree."""
 
-    cwd_changed        = Signal(str)
-    favorite_requested = Signal(str, str, str)
-    env_file_detected  = Signal(str, str)
+    cwd_changed              = Signal(str)
+    favorite_requested       = Signal(str, str, str)
+    env_file_detected        = Signal(str, str)
+    open_projects_requested  = Signal()
 
     def __init__(
         self,
@@ -111,7 +116,7 @@ class SplitPaneContainer(QWidget):
         layout.setSpacing(0)
 
         self._root_splitter = QSplitter(Qt.Horizontal)
-        self._root_splitter.setHandleWidth(3)
+        self._root_splitter.setHandleWidth(2)
         self._root_splitter.setChildrenCollapsible(False)
         layout.addWidget(self._root_splitter)
 
@@ -132,11 +137,14 @@ class SplitPaneContainer(QWidget):
         panel.favorite_requested.connect(self.favorite_requested)
         panel.env_file_detected.connect(self.env_file_detected)
         panel.focused.connect(lambda p=panel: self._on_panel_focused(p))
+        panel.open_projects_requested.connect(self.open_projects_requested)
 
         wrapper = _PaneWrapper(panel)
+        panel.cwd_changed.connect(wrapper.set_title)
         wrapper.close_requested.connect(self._on_close_requested)
         p = ThemeManager.instance().current
         wrapper.apply_theme(p)
+        wrapper.set_title(panel.cwd_display)
         return wrapper
 
     def _on_close_requested(self, wrapper: _PaneWrapper) -> None:
@@ -258,7 +266,7 @@ class SplitPaneContainer(QWidget):
 
     def _make_splitter(self, orientation: Qt.Orientation) -> QSplitter:
         s = QSplitter(orientation)
-        s.setHandleWidth(3)
+        s.setHandleWidth(2)
         s.setChildrenCollapsible(False)
         p = ThemeManager.instance().current
         s.setStyleSheet(

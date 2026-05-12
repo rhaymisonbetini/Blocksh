@@ -117,3 +117,4 @@ logs/
 uv.lock
 pip-selfcheck.json
 packaging/.tools/
+demo/
