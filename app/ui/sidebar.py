@@ -197,7 +197,7 @@ class Sidebar(QWidget):
         _crl.setSpacing(0)
         _crl.addStretch(1)
         self._collapse_btn = QPushButton("«")
-        self._collapse_btn.setFixedSize(22, 22)
+        self._collapse_btn.setFixedSize(28, 28)
         self._collapse_btn.setToolTip("Collapse sidebar")
         self._collapse_btn.clicked.connect(self._toggle_collapse)
         _crl.addWidget(self._collapse_btn)
@@ -733,7 +733,7 @@ class Sidebar(QWidget):
         if hasattr(self, "_collapse_btn"):
             self._collapse_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
-                f" border-radius: 4px; font-size: {TY.base}pt; }}"
+                f" border-radius: 4px; font-size: {TY.md}pt; }}"
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
             )
         sep_style = f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
@@ -818,7 +818,7 @@ class Sidebar(QWidget):
                 self._collapse_btn.setToolTip("Collapse sidebar")
             self._anim.finished.connect(_on_done)
         else:
-            self._anim.finished.connect(lambda: self.setFixedWidth(210))
+            self._anim.finished.connect(lambda: self.setFixedWidth(48))
 
         self._anim.start()
 
