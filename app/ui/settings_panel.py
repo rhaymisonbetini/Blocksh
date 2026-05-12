@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, get_mono_font, TY
 from ..domain.settings import AppSettings
 from ..infra.storage.history_repository import HistoryRepository
 from ..infra.storage.favorites_repository import FavoritesRepository
@@ -24,26 +24,28 @@ from ..services.settings_service import SettingsService
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _section_frame(title: str, p: Palette) -> tuple[QFrame, QVBoxLayout]:
+def _section_frame(title: str, p: Palette, danger: bool = False) -> tuple[QFrame, QVBoxLayout]:
     frame = QFrame()
+    border_color = p.red_ui if danger else p.border
     frame.setStyleSheet(
-        f"QFrame {{ background: {p.bg_surface}; border: 1px solid {p.border};"
-        f" border-radius: 8px; }}"
+        f"QFrame {{ background: {p.bg_surface}; border: 1px solid {border_color};"
+        f" border-radius: 12px; }}"
     )
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(12, 10, 12, 12)
+    layout.setContentsMargins(16, 12, 16, 16)
     layout.setSpacing(8)
 
+    title_color = p.red_ui if danger else p.blue
     title_lbl = QLabel(title)
     title_lbl.setStyleSheet(
-        f"color: {p.blue}; font-size: 9pt; font-weight: bold;"
+        f"color: {title_color}; font-size: {TY.lg}pt; font-weight: bold;"
         f" background: transparent; border: none;"
     )
     layout.addWidget(title_lbl)
 
     sep = QFrame()
     sep.setFrameShape(QFrame.HLine)
-    sep.setStyleSheet(f"QFrame {{ color: {p.border}; max-height: 1px; border: none; background: {p.border}; }}")
+    sep.setStyleSheet(f"QFrame {{ color: {border_color}; max-height: 1px; border: none; background: {border_color}; }}")
     layout.addWidget(sep)
 
     return frame, layout
@@ -56,7 +58,7 @@ def _row_widget(label: str, control: QWidget, p: Palette) -> QWidget:
     h.setContentsMargins(0, 0, 0, 0)
     h.setSpacing(8)
     lbl = QLabel(label)
-    lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none;")
+    lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent; border: none;")
     lbl.setFixedWidth(130)
     h.addWidget(lbl)
     h.addWidget(control)
@@ -69,7 +71,7 @@ def _action_btn(text: str, p: Palette, danger: bool = False) -> QPushButton:
     color = p.red_ui if danger else p.blue
     btn.setStyleSheet(
         f"QPushButton {{ background: transparent; color: {color}; border: 1px solid {color};"
-        f" border-radius: 4px; font-size: 9pt; padding: 0 12px; }}"
+        f" border-radius: 4px; font-size: {TY.md}pt; padding: 0 12px; }}"
         f"QPushButton:hover {{ background: {color}; color: {p.bg}; }}"
     )
     return btn
@@ -114,14 +116,14 @@ class _ThemeCreatorSection(QWidget):
         nh.setContentsMargins(0, 0, 0, 0)
         nh.setSpacing(8)
         name_lbl = QLabel("Theme name:")
-        name_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none;")
+        name_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent; border: none;")
         name_lbl.setFixedWidth(100)
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("my-theme")
         self._name_edit.setFixedHeight(26)
         self._name_edit.setStyleSheet(
             f"QLineEdit {{ background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
-            f" border-radius: 4px; font-size: 9pt; padding: 0 6px; }}"
+            f" border-radius: 4px; font-size: {TY.md}pt; padding: 0 6px; }}"
         )
         save_btn = _action_btn("Save theme", p)
         save_btn.clicked.connect(self._save_theme)
@@ -141,7 +143,7 @@ class _ThemeCreatorSection(QWidget):
         pv_lbl.setAlignment(Qt.AlignCenter)
         pv_lbl.setGeometry(0, 0, 160, 50)
         pv_lbl.setStyleSheet(
-            f"color: {self._working.get('fg', '#fff')}; font-size: 9pt;"
+            f"color: {self._working.get('fg', '#fff')}; font-size: {TY.md}pt;"
             f" background: transparent; border: none;"
         )
         self._preview_text_lbl = pv_lbl
@@ -151,7 +153,7 @@ class _ThemeCreatorSection(QWidget):
         for group_name, grp_fields in _COLOR_GROUPS:
             grp_lbl = QLabel(group_name)
             grp_lbl.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: 8pt; font-weight: bold;"
+                f"color: {p.fg_dim}; font-size: {TY.base}pt; font-weight: bold;"
                 f" background: transparent; border: none;"
             )
             vbox.addWidget(grp_lbl)
@@ -187,7 +189,7 @@ class _ThemeCreatorSection(QWidget):
 
                 flbl = QLabel(field)
                 flbl.setStyleSheet(
-                    f"color: {p.fg_muted}; font-family: Monospace; font-size: 8pt;"
+                    f"color: {p.fg_muted}; font-family: {get_mono_font()}; font-size: {TY.base}pt;"
                     f" background: transparent; border: none;"
                 )
 
@@ -200,7 +202,7 @@ class _ThemeCreatorSection(QWidget):
         # existing user themes (delete)
         del_lbl = QLabel("Existing user themes")
         del_lbl.setStyleSheet(
-            f"color: {p.fg_dim}; font-size: 8pt; font-weight: bold;"
+            f"color: {p.fg_dim}; font-size: {TY.base}pt; font-weight: bold;"
             f" background: transparent; border: none;"
         )
         vbox.addWidget(del_lbl)
@@ -232,7 +234,7 @@ class _ThemeCreatorSection(QWidget):
             rh.setSpacing(8)
             nlbl = QLabel(theme.name)
             nlbl.setStyleSheet(
-                f"color: {p.fg}; font-family: Monospace; font-size: 9pt;"
+                f"color: {p.fg}; font-family: {get_mono_font()}; font-size: {TY.md}pt;"
                 f" background: transparent; border: none;"
             )
             rh.addWidget(nlbl, 1)
@@ -246,7 +248,7 @@ class _ThemeCreatorSection(QWidget):
         if not has_user:
             no_lbl = QLabel("No custom themes yet")
             no_lbl.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: 8pt; background: transparent; border: none;"
+                f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; border: none;"
             )
             self._del_layout.addWidget(no_lbl)
 
@@ -274,7 +276,7 @@ class _ThemeCreatorSection(QWidget):
             f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 4px; }}"
         )
         self._preview_text_lbl.setStyleSheet(
-            f"color: {fg}; font-size: 9pt; background: transparent; border: none;"
+            f"color: {fg}; font-size: {TY.md}pt; background: transparent; border: none;"
         )
 
     def _save_theme(self) -> None:
@@ -341,7 +343,7 @@ class _DataManagementSection(QWidget):
 
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(
-            f"color: {p.green}; font-size: 8pt; background: transparent; border: none;"
+            f"color: {p.green}; font-size: {TY.base}pt; background: transparent; border: none;"
         )
         self._status_lbl.setWordWrap(True)
 
@@ -438,7 +440,7 @@ class _AppearanceSection(QWidget):
         ctrl_style = (
             f"QComboBox, QSpinBox, QFontComboBox {{"
             f" background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
-            f" border-radius: 4px; font-size: 9pt; padding: 2px 6px; min-height: 24px; }}"
+            f" border-radius: 4px; font-size: {TY.md}pt; padding: 2px 6px; min-height: 24px; }}"
         )
 
         # profile photo
@@ -447,7 +449,7 @@ class _AppearanceSection(QWidget):
         self._avatar_name_lbl = QLabel(photo_name)
         self._avatar_name_lbl.setFixedHeight(26)
         self._avatar_name_lbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-size: 9pt; background: {p.bg_overlay};"
+            f"color: {p.fg_muted}; font-size: {TY.md}pt; background: {p.bg_overlay};"
             f" border: 1px solid {p.border}; border-radius: 4px; padding: 0 6px;"
         )
         choose_avatar_btn = _action_btn("Choose...", p)
@@ -456,7 +458,7 @@ class _AppearanceSection(QWidget):
         clear_avatar_btn.setFixedSize(26, 26)
         clear_avatar_btn.setToolTip("Remove photo")
         clear_avatar_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 10pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.lg}pt; }}"
             f"QPushButton:hover {{ color: {p.red_ui}; }}"
         )
         clear_avatar_btn.clicked.connect(self._clear_avatar)
@@ -517,7 +519,7 @@ class _AppearanceSection(QWidget):
         self._color_btn.setStyleSheet(
             f"QPushButton {{ background: {s.output_fg_override or p.bg_overlay};"
             f" color: {p.fg}; border: 1px solid {p.border}; border-radius: 4px;"
-            f" font-size: 9pt; padding: 0 8px; }}"
+            f" font-size: {TY.md}pt; padding: 0 8px; }}"
         )
         self._color_btn.clicked.connect(self._pick_output_color)
 
@@ -525,7 +527,7 @@ class _AppearanceSection(QWidget):
         clear_color_btn.setFixedSize(26, 26)
         clear_color_btn.setToolTip("Reset to theme default")
         clear_color_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: 10pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.lg}pt; }}"
             f"QPushButton:hover {{ color: {p.red_ui}; }}"
         )
         clear_color_btn.clicked.connect(self._clear_output_color)
@@ -565,7 +567,7 @@ class _AppearanceSection(QWidget):
             self._color_btn.setStyleSheet(
                 f"QPushButton {{ background: {hex_val}; color: {p.fg};"
                 f" border: 1px solid {p.border}; border-radius: 4px;"
-                f" font-size: 9pt; padding: 0 8px; }}"
+                f" font-size: {TY.md}pt; padding: 0 8px; }}"
             )
 
     def _clear_output_color(self) -> None:
@@ -576,7 +578,7 @@ class _AppearanceSection(QWidget):
             self._color_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg};"
                 f" border: 1px solid {p.border}; border-radius: 4px;"
-                f" font-size: 9pt; padding: 0 8px; }}"
+                f" font-size: {TY.md}pt; padding: 0 8px; }}"
             )
 
     def apply_theme(self, p: Palette) -> None:
@@ -600,7 +602,7 @@ class _TerminalSection(QWidget):
         ctrl_style = (
             f"QComboBox, QSpinBox {{"
             f" background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
-            f" border-radius: 4px; font-size: 9pt; padding: 2px 6px; min-height: 24px; }}"
+            f" border-radius: 4px; font-size: {TY.md}pt; padding: 2px 6px; min-height: 24px; }}"
         )
 
         # default shell
@@ -640,7 +642,7 @@ class _TerminalSection(QWidget):
         self._auto_scroll = QCheckBox("Auto-scroll to latest output")
         self._auto_scroll.setChecked(s.auto_scroll)
         self._auto_scroll.setStyleSheet(
-            f"QCheckBox {{ color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none; }}"
+            f"QCheckBox {{ color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent; border: none; }}"
             f"QCheckBox::indicator {{ width: 14px; height: 14px; }}"
         )
         self._auto_scroll.stateChanged.connect(
@@ -681,7 +683,7 @@ class _TerminalSection(QWidget):
         note = QLabel("Shell and scrollback changes apply to new terminal tabs only.")
         note.setWordWrap(True)
         note.setStyleSheet(
-            f"color: {p.fg_dim}; font-size: 8pt; background: transparent; border: none;"
+            f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; border: none;"
         )
         vbox.addWidget(note)
 
@@ -728,7 +730,7 @@ class _AiSection(QWidget):
         ctrl_style = (
             f"QComboBox, QLineEdit {{"
             f" background: {p.bg_overlay}; color: {p.fg}; border: 1px solid {p.border};"
-            f" border-radius: 4px; font-size: 9pt; padding: 2px 6px; min-height: 24px; }}"
+            f" border-radius: 4px; font-size: {TY.md}pt; padding: 2px 6px; min-height: 24px; }}"
             f"QComboBox::drop-down {{ border: none; }}"
         )
 
@@ -736,7 +738,7 @@ class _AiSection(QWidget):
         self._enable_cb = QCheckBox("Enable AI features")
         self._enable_cb.setChecked(s.ai_enabled)
         self._enable_cb.setStyleSheet(
-            f"QCheckBox {{ color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none; }}"
+            f"QCheckBox {{ color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent; border: none; }}"
             f"QCheckBox::indicator {{ width: 14px; height: 14px; }}"
         )
         self._enable_cb.stateChanged.connect(
@@ -788,12 +790,12 @@ class _AiSection(QWidget):
         sh.setSpacing(8)
         slbl = QLabel("Status:")
         slbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-size: 9pt; background: transparent; border: none;"
+            f"color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent; border: none;"
         )
         slbl.setFixedWidth(130)
         self._ollama_status = QLabel("● Checking…")
         self._ollama_status.setStyleSheet(
-            f"color: {p.fg_dim}; font-size: 9pt; background: transparent; border: none;"
+            f"color: {p.fg_dim}; font-size: {TY.md}pt; background: transparent; border: none;"
         )
         recheck_btn = _action_btn("Re-check", p)
         recheck_btn.clicked.connect(self._check_ollama)
@@ -831,7 +833,7 @@ class _AiSection(QWidget):
         warn_a = QLabel("⚠  API key stored as plaintext in ~/.blocksh/settings.json")
         warn_a.setWordWrap(True)
         warn_a.setStyleSheet(
-            f"color: {p.red}; font-size: 8pt; background: transparent; border: none;"
+            f"color: {p.red}; font-size: {TY.base}pt; background: transparent; border: none;"
         )
         av.addWidget(warn_a)
         self._stack.addWidget(anth_w)
@@ -864,7 +866,7 @@ class _AiSection(QWidget):
         warn_o = QLabel("⚠  API key stored as plaintext in ~/.blocksh/settings.json")
         warn_o.setWordWrap(True)
         warn_o.setStyleSheet(
-            f"color: {p.red}; font-size: 8pt; background: transparent; border: none;"
+            f"color: {p.red}; font-size: {TY.base}pt; background: transparent; border: none;"
         )
         ov2.addWidget(warn_o)
         self._stack.addWidget(oai_w)
@@ -884,7 +886,7 @@ class _AiSection(QWidget):
         self._ollama_status.setText("● Checking…")
         p = ThemeManager.instance().current
         self._ollama_status.setStyleSheet(
-            f"color: {p.fg_dim}; font-size: 9pt; background: transparent; border: none;"
+            f"color: {p.fg_dim}; font-size: {TY.md}pt; background: transparent; border: none;"
         )
         host = SettingsService.instance().get().ai_ollama_host
         worker = AiService.instance().check_ollama(host)
@@ -893,14 +895,14 @@ class _AiSection(QWidget):
             p2 = ThemeManager.instance().current
             self._ollama_status.setText("● Running")
             self._ollama_status.setStyleSheet(
-                f"color: {p2.green}; font-size: 9pt; background: transparent; border: none;"
+                f"color: {p2.green}; font-size: {TY.md}pt; background: transparent; border: none;"
             )
 
         def _fail(_: str) -> None:
             p2 = ThemeManager.instance().current
             self._ollama_status.setText("✗ Not running — install at ollama.com")
             self._ollama_status.setStyleSheet(
-                f"color: {p2.red}; font-size: 9pt; background: transparent; border: none;"
+                f"color: {p2.red}; font-size: {TY.md}pt; background: transparent; border: none;"
             )
 
         worker.result_ready.connect(_ok)
@@ -941,7 +943,28 @@ class SettingsPanel(QWidget):
         p = ThemeManager.instance().current
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 24)
-        outer.setSpacing(0)
+        outer.setSpacing(16)
+
+        # ── Header row with swatches ──────────────────────────────────────────
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        title_lbl = QLabel("Settings")
+        title_lbl.setStyleSheet(
+            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+        )
+        header_row.addWidget(title_lbl)
+        header_row.addStretch()
+        self._swatch_row = QWidget()
+        swatch_layout = QHBoxLayout(self._swatch_row)
+        swatch_layout.setContentsMargins(0, 0, 0, 0)
+        swatch_layout.setSpacing(4)
+        for color in [p.blue, p.red, p.green, p.accent, p.cyan, p.fg_muted]:
+            swatch = QLabel()
+            swatch.setFixedSize(16, 16)
+            swatch.setStyleSheet(f"background: {color}; border-radius: 8px; border: none;")
+            swatch_layout.addWidget(swatch)
+        header_row.addWidget(self._swatch_row)
+        outer.addLayout(header_row)
 
         # Two-column grid: left col = Appearance + Terminal Behavior
         #                  right col = Theme Creator + Data Management
@@ -988,7 +1011,7 @@ class SettingsPanel(QWidget):
         self._sections.append(self._theme_creator)
 
         # ── Data Management ───────────────────────────────────────────────────
-        frame4, layout4 = _section_frame("Data Management", p)
+        frame4, layout4 = _section_frame("⚠ Data Management", p, danger=True)
         self._data_mgmt = _DataManagementSection(
             self._repo, self._fav_repo, self._proj_repo, self._conn, p
         )
@@ -1007,12 +1030,17 @@ class SettingsPanel(QWidget):
         self._frames = [frame, frame2, frame3, frame4, frame5]
 
     def apply_theme(self, p: Palette) -> None:
-        frame_style = (
+        normal_style = (
             f"QFrame {{ background: {p.bg_surface}; border: 1px solid {p.border};"
-            f" border-radius: 8px; }}"
+            f" border-radius: 12px; }}"
         )
-        for frame in self._frames:
-            frame.setStyleSheet(frame_style)
+        danger_style = (
+            f"QFrame {{ background: {p.bg_surface}; border: 1px solid {p.red_ui};"
+            f" border-radius: 12px; }}"
+        )
+        # frame4 (index 3) is the Data Management danger zone
+        for i, frame in enumerate(self._frames):
+            frame.setStyleSheet(danger_style if i == 3 else normal_style)
         for sec in self._sections:
             if hasattr(sec, "apply_theme"):
                 sec.apply_theme(p)

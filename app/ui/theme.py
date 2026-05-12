@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, fields, MISSING
 
 from PySide6.QtCore import QObject, Signal
 
@@ -38,6 +38,18 @@ class Palette:
     pty_fg: str
     pty_cursor_bg: str
     pty_cursor_fg: str
+    # extended design tokens (with defaults for backward-compat with user themes)
+    accent:        str = "#48CAB2"
+    accent_hover:  str = "#3db89f"
+    accent_fg:     str = "#0d0f1a"
+    surface_glass: str = "rgba(22,25,38,0.92)"
+    border_focus:  str = "#89b4fa"
+    shadow:        str = "rgba(0,0,0,0.35)"
+    status_ok:     str = "#a6e3a1"
+    status_err:    str = "#f38ba8"
+    status_warn:   str = "#f9e2af"
+    tag_local_bg:  str = "#1a3a2e"
+    tag_local_fg:  str = "#a6e3a1"
 
 
 DARK = Palette(
@@ -59,11 +71,22 @@ DARK = Palette(
     red           = "#f38ba8",
     red_ui        = "#e74c3c",
     cyan          = "#94e2d5",
-    border        = "#313244",
+    border        = "#252840",
     pty_bg        = "#0d0f1a",
     pty_fg        = "#cdd6f4",
     pty_cursor_bg = "#cdd6f4",
     pty_cursor_fg = "#0d0f1a",
+    accent        = "#48CAB2",
+    accent_hover  = "#3db89f",
+    accent_fg     = "#0d0f1a",
+    surface_glass = "rgba(22,25,38,0.92)",
+    border_focus  = "#89b4fa",
+    shadow        = "rgba(0,0,0,0.35)",
+    status_ok     = "#a6e3a1",
+    status_err    = "#f38ba8",
+    status_warn   = "#f9e2af",
+    tag_local_bg  = "#1a3a2e",
+    tag_local_fg  = "#a6e3a1",
 )
 
 LIGHT = Palette(
@@ -90,6 +113,17 @@ LIGHT = Palette(
     pty_fg        = "#4c4f69",
     pty_cursor_bg = "#4c4f69",
     pty_cursor_fg = "#eff1f5",
+    accent        = "#179299",
+    accent_hover  = "#0d7e84",
+    accent_fg     = "#eff1f5",
+    surface_glass = "rgba(230,233,239,0.92)",
+    border_focus  = "#1e66f5",
+    shadow        = "rgba(0,0,0,0.15)",
+    status_ok     = "#40a02b",
+    status_err    = "#d20f39",
+    status_warn   = "#df8e1d",
+    tag_local_bg  = "#d8f0e8",
+    tag_local_fg  = "#179299",
 )
 
 _BUILT_IN: dict[str, Palette] = {
@@ -98,15 +132,58 @@ _BUILT_IN: dict[str, Palette] = {
 }
 
 _FIELD_NAMES = {f.name for f in fields(Palette)}
+_REQUIRED_FIELD_NAMES = {
+    f.name for f in fields(Palette)
+    if f.default is MISSING and f.default_factory is MISSING  # type: ignore[misc]
+}
 
 
 def _load_palette_from_dict(data: dict) -> Palette | None:
-    if not _FIELD_NAMES <= set(data.keys()):
+    if not _REQUIRED_FIELD_NAMES <= set(data.keys()):
         return None
     try:
-        return Palette(**{k: data[k] for k in _FIELD_NAMES})
+        return Palette(**{k: data[k] for k in _FIELD_NAMES if k in data})
     except Exception:
         return None
+
+
+def _best_mono_font() -> str:
+    try:
+        from PySide6.QtGui import QFontDatabase
+        available = set(QFontDatabase.families())
+        for preferred in ["JetBrains Mono", "Fira Code", "Cascadia Code", "Monospace"]:
+            if preferred in available:
+                return preferred
+    except Exception:
+        pass
+    return "Monospace"
+
+
+_MONO_FONT: str | None = None
+
+
+def get_mono_font() -> str:
+    """Return the best available monospace font. Lazy — safe to call before QApplication."""
+    global _MONO_FONT
+    if _MONO_FONT is None:
+        _MONO_FONT = _best_mono_font()
+    return _MONO_FONT
+
+
+@dataclass(frozen=True)
+class Typography:
+    xs:        int = 8    # micro: type badges, file extensions, pane header titles
+    sm:        int = 9    # secondary: timestamps, sub-labels, muted metadata
+    base:      int = 11   # default: nav items, descriptions, checkboxes, helper text
+    md:        int = 12   # body: section field labels, input placeholders
+    lg:        int = 13   # primary actions: tab labels, buttons, command text
+    xl:        int = 15   # headings: nav group headers, panel titles
+    mono_sm:   int = 10   # tool call labels, small code snippets
+    mono_base: int = 11   # default output / AI response text
+    mono_lg:   int = 13   # command prompt text in blocks
+
+
+TY = Typography()
 
 
 class ThemeManager(QObject):

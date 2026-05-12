@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, TY
 
 
 class AiPermissionBanner(QWidget):
@@ -32,7 +32,7 @@ class AiPermissionBanner(QWidget):
         layout.setSpacing(10)
 
         icon = QLabel("🤖")
-        icon.setStyleSheet("background: transparent; border: none; font-size: 13pt;")
+        icon.setStyleSheet(f"background: transparent; border: none; font-size: {TY.lg}pt;")
         icon.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(icon)
 
@@ -114,25 +114,25 @@ class AiPermissionBanner(QWidget):
             f" border-top: 1px solid {p.border}; border-bottom: 1px solid {p.border}; }}"
         )
         self._label.setStyleSheet(
-            f"color: {p.fg}; font-size: 9pt; background: transparent; border: none;"
+            f"color: {p.fg}; font-size: {TY.sm}pt; background: transparent; border: none;"
         )
         self._answer_input.setStyleSheet(
             f"QLineEdit {{ background: {p.bg}; color: {p.fg}; border: 1px solid {p.border};"
-            f" border-radius: 4px; font-size: 9pt; padding: 0 6px; }}"
+            f" border-radius: 4px; font-size: {TY.sm}pt; padding: 0 6px; }}"
             f"QLineEdit:focus {{ border-color: {p.blue}; }}"
         )
         self._send_btn.setStyleSheet(
             f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-            f" border-radius: 4px; font-size: 9pt; font-weight: bold; }}"
+            f" border-radius: 4px; font-size: {TY.sm}pt; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #74b0e8; }}"
         )
         self._allow_btn.setStyleSheet(
             f"QPushButton {{ background: {p.green}; color: {p.bg}; border: none;"
-            f" border-radius: 4px; font-size: 9pt; font-weight: bold; }}"
+            f" border-radius: 4px; font-size: {TY.sm}pt; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #b8f0b0; }}"
         )
         self._deny_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.red};"
-            f" border: 1px solid {p.red}; border-radius: 4px; font-size: 9pt; }}"
+            f" border: 1px solid {p.red}; border-radius: 4px; font-size: {TY.sm}pt; }}"
             f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
         )

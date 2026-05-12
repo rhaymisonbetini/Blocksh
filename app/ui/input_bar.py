@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
 from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtGui import QFont, QFontMetrics, QTextCursor
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, get_mono_font, TY
 
 _PLACEHOLDERS = [
     "type your command...",
@@ -116,13 +116,14 @@ class InputBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("InputBar")
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
         self._build_ui()
 
         # #35: dynamic height — grow up to 5 lines as user types
-        font = QFont("Monospace", 10)
+        font = QFont("Monospace", TY.mono_sm)
         self._line_h  = QFontMetrics(font).lineSpacing()
         self._v_margin = 20   # layout top (10) + bottom (10) margins
         self._input.document().contentsChanged.connect(self._adjust_height)
@@ -147,7 +148,7 @@ class InputBar(QWidget):
         self._input.textChanged.connect(self._on_ai_mode_check)
 
         self._ai_btn = QPushButton("✦")
-        self._ai_btn.setFixedSize(32, 32)
+        self._ai_btn.setFixedSize(38, 38)
         self._ai_btn.setToolTip(
             "AI mode — type a request in natural language\n"
             "e.g.  > list all running docker containers\n"
@@ -156,8 +157,8 @@ class InputBar(QWidget):
         self._ai_btn.clicked.connect(self._toggle_ai_prefix)
 
         self._run_btn = QPushButton("▶  Run")
-        self._run_btn.setFixedHeight(36)
-        self._run_btn.setMinimumWidth(88)
+        self._run_btn.setFixedHeight(42)
+        self._run_btn.setMinimumWidth(110)
         self._run_btn.clicked.connect(self._submit)
 
         layout.addWidget(self._input)
@@ -165,12 +166,17 @@ class InputBar(QWidget):
         layout.addWidget(self._run_btn, 0, Qt.AlignTop)
 
     def apply_theme(self, p: Palette) -> None:
-        self.setStyleSheet(f"QWidget {{ background-color: {p.bg}; }}")
+        mono = get_mono_font()
+        ai_mode = self._input.toPlainText().startswith("> ")
+        border_color = p.blue if ai_mode else p.border
+        self.setStyleSheet(
+            f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {border_color};"
+            f" border-radius: 10px; }}"
+        )
         self._input.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
-            f" font-family: Monospace; font-size: 10pt; }}"
+            f" font-family: {mono}; font-size: {TY.base}pt; }}"
         )
-        ai_mode = self._input.toPlainText().startswith("> ")
         self._apply_ai_mode_style(p, ai_mode)
 
     # ── dynamic height (#35) ──────────────────────────────────────────────────
@@ -347,19 +353,24 @@ class InputBar(QWidget):
     def _on_ai_mode_check(self) -> None:
         p = ThemeManager.instance().current
         ai_mode = self._input.toPlainText().startswith("> ")
+        border_color = p.blue if ai_mode else p.border
+        self.setStyleSheet(
+            f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {border_color};"
+            f" border-radius: 10px; }}"
+        )
         self._apply_ai_mode_style(p, ai_mode)
 
     def _apply_ai_mode_style(self, p: Palette, ai_mode: bool) -> None:
         if ai_mode:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 5px; font-size: 12pt; font-weight: bold; }}"
+                f" border-radius: 5px; font-size: {TY.xl}pt; font-weight: bold; }}"
                 f"QPushButton:hover {{ background: {p.blue}; opacity: 0.85; }}"
             )
             self._run_btn.setText("Ask AI →")
             self._run_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 6px; font-weight: bold; font-size: 10pt;"
+                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}pt;"
                 f" padding: 0 18px; }}"
                 f"QPushButton:hover {{ background: #74b0e8; }}"
                 f"QPushButton:pressed {{ background: #5a9fd4; }}"
@@ -367,16 +378,16 @@ class InputBar(QWidget):
         else:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
-                f" border-radius: 5px; font-size: 12pt; }}"
+                f" border-radius: 5px; font-size: {TY.xl}pt; }}"
                 f"QPushButton:hover {{ color: {p.blue}; }}"
             )
             self._run_btn.setText("▶  Run")
             self._run_btn.setStyleSheet(
-                "QPushButton { background: #2ecc71; color: #0d0f1a; border: none;"
-                " border-radius: 6px; font-weight: bold; font-size: 10pt;"
-                " padding: 0 18px; }"
-                "QPushButton:hover { background: #27ae60; }"
-                "QPushButton:pressed { background: #1e8449; }"
+                f"QPushButton {{ background: {p.accent}; color: {p.accent_fg}; border: none;"
+                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}pt;"
+                f" padding: 0 18px; }}"
+                f"QPushButton:hover {{ background: {p.accent_hover}; }}"
+                f"QPushButton:pressed {{ background: {p.accent_hover}; }}"
             )
 
     def focus(self):

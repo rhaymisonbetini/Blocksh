@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ..domain.workflow import Workflow, WorkflowStep
-from .theme import ThemeManager
+from .theme import ThemeManager, TY
 
 
 class _StepRow(QWidget):
@@ -104,7 +104,7 @@ class WorkflowEditor(QDialog):
 
         steps_header = QHBoxLayout()
         steps_lbl = QLabel("Steps")
-        steps_lbl.setStyleSheet("font-size: 10pt; font-weight: bold; background: transparent;")
+        steps_lbl.setStyleSheet(f"font-size: {TY.mono_sm}pt; font-weight: bold; background: transparent;")
         steps_header.addWidget(steps_lbl)
         steps_header.addStretch()
         add_btn = QPushButton("+ Add Step")

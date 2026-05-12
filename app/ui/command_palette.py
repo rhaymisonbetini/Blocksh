@@ -6,10 +6,10 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QKeySequence, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QListWidget, QListWidgetItem, QLabel, QFrame,
+    QListWidget, QListWidgetItem, QLabel, QFrame, QGraphicsDropShadowEffect,
 )
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, get_mono_font, TY
 
 
 def _time_ago(dt: datetime) -> str:
@@ -38,17 +38,17 @@ class _ResultItem(QWidget):
 
         icon_lbl = QLabel(source_icon)
         icon_lbl.setFixedWidth(18)
-        icon_lbl.setStyleSheet("font-size: 10pt; background: transparent;")
+        icon_lbl.setStyleSheet(f"font-size: {TY.mono_sm}pt; background: transparent;")
         top_row.addWidget(icon_lbl)
 
         cmd_lbl = QLabel(text[:80] + ("…" if len(text) > 80 else ""))
         cmd_lbl.setStyleSheet(
-            "font-family: Monospace; font-size: 9pt; font-weight: bold; background: transparent;"
+            f"font-family: {get_mono_font()}; font-size: {TY.sm}pt; font-weight: bold; background: transparent;"
         )
         top_row.addWidget(cmd_lbl, 1)
 
         time_lbl = QLabel(time_label)
-        time_lbl.setStyleSheet("font-size: 8pt; background: transparent;")
+        time_lbl.setStyleSheet(f"font-size: {TY.xs}pt; background: transparent;")
         top_row.addWidget(time_lbl)
 
         layout.addLayout(top_row)
@@ -56,7 +56,7 @@ class _ResultItem(QWidget):
         if cwd:
             cwd_lbl = QLabel(cwd)
             cwd_lbl.setStyleSheet(
-                "font-size: 7pt; padding-left: 24px; background: transparent;"
+                f"font-size: {TY.xs}pt; padding-left: 24px; background: transparent;"
             )
             layout.addWidget(cwd_lbl)
         else:
@@ -112,7 +112,7 @@ class CommandPalette(QWidget):
         input_layout.setSpacing(8)
 
         search_icon = QLabel("⌕")
-        search_icon.setStyleSheet("font-size: 14pt; background: transparent;")
+        search_icon.setStyleSheet(f"font-size: {TY.xl}pt; background: transparent;")
         search_icon.setFixedWidth(22)
         input_layout.addWidget(search_icon)
 
@@ -140,7 +140,7 @@ class CommandPalette(QWidget):
         hint = QLabel("Enter — insert   Ctrl+Enter — insert & run   Esc — close")
         hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName("palette_hint")
-        hint.setStyleSheet("font-size: 7pt; padding: 4px;")
+        hint.setStyleSheet(f"font-size: {TY.xs}pt; padding: 4px;")
         card_layout.addWidget(hint)
 
         outer.addWidget(self._card)
@@ -258,9 +258,9 @@ class CommandPalette(QWidget):
     def apply_theme(self, p: Palette) -> None:
         self._card.setStyleSheet(
             f"QFrame#palette_card {{"
-            f"  background: {p.bg_panel};"
-            f"  border: 1px solid {p.border};"
-            f"  border-radius: 10px;"
+            f"  background: {p.surface_glass};"
+            f"  border: 1px solid rgba(255,255,255,0.08);"
+            f"  border-radius: 12px;"
             f"}}"
             f"QWidget#palette_input_row {{"
             f"  background: transparent;"
@@ -283,13 +283,22 @@ class CommandPalette(QWidget):
         )
         self._input.setStyleSheet(
             f"QLineEdit {{"
-            f"  background: transparent; color: {p.fg}; border: none;"
-            f"  font-size: 11pt; font-family: Monospace;"
+            f"  background: {p.bg_overlay}; color: {p.fg}; border: none;"
+            f"  border-radius: 6px; padding: 8px 14px;"
+            f"  font-size: {TY.base}pt; font-family: {get_mono_font()};"
+            f"}}"
+            f"QLineEdit:focus {{"
+            f"  border: 1px solid {p.border_focus};"
             f"}}"
         )
+        shadow = QGraphicsDropShadowEffect(self._card)
+        shadow.setBlurRadius(40)
+        shadow.setOffset(0, 12)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        self._card.setGraphicsEffect(shadow)
         # update child label colors
         for lbl in self.findChildren(QLabel):
             if "cwd" in (lbl.styleSheet()):
                 lbl.setStyleSheet(
-                    f"font-size: 7pt; padding-left: 24px; background: transparent; color: {p.fg_muted};"
+                    f"font-size: {TY.xs}pt; padding-left: 24px; background: transparent; color: {p.fg_muted};"
                 )

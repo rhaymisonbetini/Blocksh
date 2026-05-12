@@ -9,7 +9,7 @@ from .sidebar import Sidebar
 from .tab_bar import TabBar
 from .terminal_panel import TerminalPanel
 from .split_pane_container import SplitPaneContainer
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, TY
 from .settings_panel import SettingsPanel
 from .command_palette import CommandPalette
 from ..core.command_executor import BaseExecutor
@@ -157,14 +157,14 @@ class MainWindow(QMainWindow):
         back_btn.setFixedHeight(30)
         back_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
-            f" font-size: 9pt; padding: 0 8px; }}"
+            f" font-size: {TY.sm}pt; padding: 0 8px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         back_btn.clicked.connect(self._close_settings)
 
         title_lbl = QLabel("⚙  Settings")
         title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: 11pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.base}pt; font-weight: bold; background: transparent;"
         )
 
         h_layout.addWidget(back_btn)
@@ -232,6 +232,7 @@ class MainWindow(QMainWindow):
         )
         container.favorite_requested.connect(self._on_favorite_requested)
         container.env_file_detected.connect(self._on_env_file_detected)
+        container.open_projects_requested.connect(self._on_open_projects_from_empty)
         self._panels.append(container)
         self._stack.addWidget(container)
         self._tab_bar.add_tab(f"Terminal {len(self._panels)}")
@@ -284,11 +285,11 @@ class MainWindow(QMainWindow):
             )
             self._settings_back_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
-                f" font-size: 9pt; padding: 0 8px; }}"
+                f" font-size: {TY.sm}pt; padding: 0 8px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
             self._settings_title_lbl.setStyleSheet(
-                f"color: {p.fg}; font-size: 11pt; font-weight: bold; background: transparent;"
+                f"color: {p.fg}; font-size: {TY.base}pt; font-weight: bold; background: transparent;"
             )
 
     # ── panel actions ─────────────────────────────────────────────────────────
@@ -380,6 +381,10 @@ class MainWindow(QMainWindow):
         self._load_favorites()
 
     # ── projects ──────────────────────────────────────────────────────────────
+
+    def _on_open_projects_from_empty(self) -> None:
+        self._load_projects()
+        self._sidebar._open_projects()
 
     def _load_projects(self) -> None:
         projects = self._project_service.all()

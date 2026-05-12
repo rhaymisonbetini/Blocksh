@@ -4,8 +4,8 @@ from dataclasses import dataclass
 @dataclass
 class AppSettings:
     font_family: str = "Monospace"
-    font_size_terminal: int = 10
-    font_size_output: int = 11
+    font_size_terminal: int = 13
+    font_size_output: int = 13
     cursor_style: str = "block"       # block | underline | beam
     output_fg_override: str = ""      # empty = use theme palette.fg
     default_shell: str = "bash"

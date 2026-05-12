@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QFont, QFontMetrics, QTextCursor, QKeyEvent
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, TY
 
 
 # ── tool call row ─────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ class _ToolCallRow(QWidget):
 
         icon = QLabel(_TOOL_ICONS.get(name, "🔧"))
         icon.setFixedWidth(18)
-        icon.setStyleSheet("background: transparent; font-size: 11pt;")
+        icon.setStyleSheet(f"background: transparent; font-size: {TY.base}pt;")
         layout.addWidget(icon)
 
         preview = args_preview[:60] + ("…" if len(args_preview) > 60 else "")
@@ -55,7 +55,7 @@ class _ToolCallRow(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QWidget {{ background: {p.bg_overlay}; border-radius: 3px; }}")
-        self._label.setStyleSheet(f"color: {p.fg_muted}; background: transparent; font-size: 10pt;")
+        self._label.setStyleSheet(f"color: {p.fg_muted}; background: transparent; font-size: {TY.mono_sm}pt;")
 
 
 # ── permission / ask inline widget ────────────────────────────────────────────
@@ -74,7 +74,7 @@ class _InlinePrompt(QWidget):
 
         icon = QLabel("🤖")
         icon.setFixedWidth(22)
-        icon.setStyleSheet("background: transparent; font-size: 12pt;")
+        icon.setStyleSheet(f"background: transparent; font-size: {TY.md}pt;")
         layout.addWidget(icon)
 
         short = question[:100] + ("…" if len(question) > 100 else "")
@@ -120,7 +120,7 @@ class _InlinePrompt(QWidget):
         self.setStyleSheet(
             f"QWidget {{ background: {p.bg_overlay}; border: 1px solid {p.border}; border-radius: 4px; }}"
         )
-        self._lbl.setStyleSheet(f"color: {p.fg}; background: transparent; font-size: 10pt;")
+        self._lbl.setStyleSheet(f"color: {p.fg}; background: transparent; font-size: {TY.mono_sm}pt;")
 
 
 # ── assistant turn widget ─────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ class _UserBubble(QWidget):
     def apply_theme(self, p: Palette) -> None:
         self._lbl.setStyleSheet(
             f"background: {p.blue}; color: {p.bg}; padding: 6px 10px;"
-            f" border-radius: 6px; font-size: 11pt;"
+            f" border-radius: 6px; font-size: {TY.base}pt;"
         )
 
 
@@ -337,13 +337,13 @@ class _AiInputBar(QWidget):
         )
         self._edit.setStyleSheet(
             f"QPlainTextEdit {{ background: {p.bg_surface}; color: {p.fg};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: 11pt;"
+            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.base}pt;"
             f" padding: 4px 6px; }}"
             f"QPlainTextEdit:focus {{ border-color: {p.blue}; }}"
         )
         self._send.setStyleSheet(
             f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-            f" border-radius: 4px; font-size: 10pt; font-weight: bold; }}"
+            f" border-radius: 4px; font-size: {TY.mono_sm}pt; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #74b0e8; }}"
             f"QPushButton:disabled {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
         )
@@ -402,7 +402,7 @@ class AiPanel(QWidget):
         hlay.setContentsMargins(12, 8, 12, 8)
         hlay.setSpacing(8)
         title = QLabel("🤖  AI Assistant")
-        title.setStyleSheet("font-size: 12pt; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"font-size: {TY.xl}pt; font-weight: bold; background: transparent;")
         hlay.addWidget(title, 1)
 
         new_btn = QPushButton("New")
@@ -439,7 +439,8 @@ class AiPanel(QWidget):
 
         if self._worker is not None:
             self._worker.cancel()
-            self._worker.wait(500)
+            self._worker.wait(3000)
+            self._worker.deleteLater()
             self._worker = None
 
         self._current_turn = self._conv.begin_turn()
@@ -459,8 +460,14 @@ class AiPanel(QWidget):
         worker.user_asked.connect(self._on_user_asked)
         worker.command_ready.connect(self._on_command_ready)
         worker.error_occurred.connect(self._on_error)
+        worker.finished.connect(lambda w=worker: self._retire_worker(w))
 
         worker.start()
+
+    def _retire_worker(self, worker) -> None:
+        if self._worker is worker:
+            self._worker = None
+        worker.deleteLater()
 
     # ── agent signal handlers ─────────────────────────────────────────────────
 
@@ -485,7 +492,6 @@ class AiPanel(QWidget):
             self._current_turn.finalize_markdown()
         self._input.set_enabled(True)
         self._input.focus()
-        self._worker = None
 
     def _on_permission_needed(self, command: str) -> None:
         if self._current_turn is None:
@@ -523,20 +529,20 @@ class AiPanel(QWidget):
         if self._current_turn:
             self._current_turn.finalize_markdown()
         self._input.set_enabled(True)
-        self._worker = None
         self.command_ready.emit(cmd)
 
     def _on_error(self, msg: str) -> None:
         if self._current_turn:
             self._current_turn.append_text(f"\n⚠  {msg}")
         self._input.set_enabled(True)
-        self._worker = None
 
     # ── header actions ────────────────────────────────────────────────────────
 
     def _on_new(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
+            self._worker.wait(3000)
+            self._worker.deleteLater()
             self._worker = None
         if self._session is not None:
             self._session.clear()
@@ -552,6 +558,8 @@ class AiPanel(QWidget):
     def _on_close(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
+            self._worker.wait(3000)
+            self._worker.deleteLater()
             self._worker = None
         self.hide()
         self.closed.emit()
@@ -575,11 +583,11 @@ class AiPanel(QWidget):
         )
         self._new_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: 10pt; }}"
+            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.mono_sm}pt; }}"
             f"QPushButton:hover {{ color: {p.fg}; border-color: {p.fg}; }}"
         )
         self._close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: none; font-size: 13pt; }}"
+            f" border: none; font-size: {TY.lg}pt; }}"
             f"QPushButton:hover {{ color: {p.red}; }}"
         )
