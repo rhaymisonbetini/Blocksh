@@ -52,7 +52,12 @@ def _read_file(path: str, start_line: int = 1, end_line: int = 0, cwd: str = "")
     if not abs_path.exists():
         return ToolResult(f"File not found: {path}", is_error=True)
     if not abs_path.is_file():
-        return ToolResult(f"Not a file: {path}", is_error=True)
+        return ToolResult(
+            f"'{abs_path}' is a directory, not a file. "
+            f"Call inspect_project(path='{abs_path}') to analyse it, "
+            f"or list_dir(path='{abs_path}') to see its contents.",
+            is_error=True,
+        )
     try:
         text  = abs_path.read_bytes().decode("utf-8", errors="replace")
         lines = text.splitlines()
@@ -164,9 +169,105 @@ def _ask_user(question: str, cwd: str = "") -> ToolResult:
     return ToolResult(question)
 
 
+def _inspect_project(path: str, cwd: str = "") -> ToolResult:
+    """Classify path, list directory, detect project type, and read key metadata files."""
+    abs_path = _resolve(path, cwd)
+
+    if not abs_path.exists():
+        return ToolResult(f"Path not found: {path}", is_error=True)
+
+    if abs_path.is_file():
+        return _read_file(path, cwd=cwd)
+
+    if not abs_path.is_dir():
+        return ToolResult(f"Not a file or directory: {path}", is_error=True)
+
+    try:
+        all_entries = sorted(abs_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+    except PermissionError:
+        return ToolResult(f"Permission denied: {abs_path}", is_error=True)
+
+    dirs     = [e.name for e in all_entries if e.is_dir()]
+    files    = [e.name for e in all_entries if e.is_file()]
+    file_set = set(files)
+
+    lines: list[str] = [f"Path: {abs_path}", "Type: directory"]
+
+    # --- project type detection ---
+    detected: list[str] = []
+    if file_set & {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"}:
+        detected.append("python")
+    if "package.json" in file_set:
+        detected.append("node")
+    if "composer.json" in file_set:
+        detected.append("php")
+    if "Cargo.toml" in file_set:
+        detected.append("rust")
+    if "go.mod" in file_set:
+        detected.append("go")
+    if "pom.xml" in file_set or "build.gradle" in file_set:
+        detected.append("java")
+    if "Gemfile" in file_set:
+        detected.append("ruby")
+    if any(f.endswith((".csproj", ".sln")) for f in files):
+        detected.append("dotnet")
+    lines.append(f"Project type: {', '.join(detected) or 'generic'}")
+
+    # --- directory listing ---
+    lines.append(f"\nDirectories ({len(dirs)}): {', '.join(dirs[:30]) or '(none)'}")
+    if len(dirs) > 30:
+        lines.append(f"  … and {len(dirs) - 30} more")
+    lines.append(f"\nFiles ({len(files)}): {', '.join(files[:50]) or '(none)'}")
+    if len(files) > 50:
+        lines.append(f"  … and {len(files) - 50} more")
+
+    # --- read key metadata files (up to 20 KB total) ---
+    priority_files = [
+        "README.md", "README.rst", "README.txt",
+        "CLAUDE.md", "AGENTS.md",
+        "pyproject.toml", "package.json", "composer.json",
+        "Cargo.toml", "go.mod", "pom.xml",
+        ".env.example", "Dockerfile", "docker-compose.yml", "Makefile",
+    ]
+    budget = 20_000
+    for fname in priority_files:
+        if budget <= 0:
+            break
+        if fname not in file_set:
+            continue
+        try:
+            raw = (abs_path / fname).read_bytes().decode("utf-8", errors="replace").rstrip()
+            if len(raw.encode()) > budget:
+                raw = raw[:budget] + "\n… [truncated]"
+            budget -= len(raw.encode())
+            lines.append(f"\n--- {fname} ---\n{raw}")
+        except Exception:
+            pass
+
+    return ToolResult("\n".join(lines))
+
+
 # ── registry ──────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, AgentTool] = {
+    "inspect_project": AgentTool(
+        name="inspect_project",
+        description=(
+            "Inspect a project path. If it is a directory: detects project type, lists all files, "
+            "and reads key metadata files (README, pyproject.toml, package.json, etc.) in one call. "
+            "If it is a file: reads the file directly. "
+            "Use this FIRST whenever the user mentions a project folder or an unknown path. "
+            "Do NOT call read_file on a directory — always use inspect_project or list_dir instead."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to inspect (file or directory, relative or absolute)"},
+            },
+            "required": ["path"],
+        },
+        call=_inspect_project,
+    ),
     "read_file": AgentTool(
         name="read_file",
         description=(

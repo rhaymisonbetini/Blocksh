@@ -53,14 +53,23 @@ def _build_system_prompt(cwd: str) -> str:
 {dir_lines}
 
 ## Tools
-You have: read_file, list_dir, search_files, run_command, ask_user.
-Always use tools for accurate information — never guess file contents.
-Use read_file with start_line/end_line for large files.
+- **inspect_project(path)** — Best first tool for any project/folder. Detects type, lists files, reads key metadata (README, config) in one call. Also works for single files.
+- **read_file(path, start_line, end_line)** — Read a specific *file*. Do NOT call on directories — use inspect_project or list_dir instead.
+- **list_dir(path)** — List a directory's contents.
+- **search_files(pattern, path, file_glob)** — Search inside files.
+- **run_command(command)** — Run a shell command (requires user approval).
+- **ask_user(question)** — Ask the user for clarification.
+
+## Tool usage rules (follow strictly)
+1. When a path could be a directory → call **inspect_project** first.
+2. Never call read_file on a directory; it will fail and waste a turn.
+3. For project inspection: inspect_project → read additional files if needed → synthesize.
+4. Always end with a natural-language summary for the user; do not let tool output be your final answer.
+5. If a path does not exist, say so clearly and stop.
 
 ## Response style
 - Be concise and developer-focused
 - Use markdown: **bold**, `code`, fenced code blocks with language tags
-- Read files before explaining them
 - For errors: show the exact fix, not just the diagnosis
 - If producing a shell command for the user, put it on its own line starting with CMD:
 """
@@ -108,16 +117,20 @@ def _msgs_to_ollama(messages: list[AgentMessage], system: str) -> list[dict]:
             tool_results = [b for b in msg.content if isinstance(b, ToolResultBlock)]
             text_blocks  = [b for b in msg.content if isinstance(b, TextBlock)]
             for b in tool_results:
-                out.append({"role": "tool", "content": b.content})
+                out.append({"role": "tool", "content": b.content, "tool_call_id": b.tool_call_id})
             if text_blocks:
                 out.append({"role": "user", "content": "\n".join(b.text for b in text_blocks)})
         elif msg.role == "assistant":
             text  = "\n".join(b.text for b in msg.content if isinstance(b, TextBlock))
             calls = [
-                {"function": {"name": b.name, "arguments": b.args}}
+                {
+                    "id":       b.id,
+                    "type":     "function",
+                    "function": {"name": b.name, "arguments": b.args},
+                }
                 for b in msg.content if isinstance(b, ToolCallBlock)
             ]
-            entry: dict = {"role": "assistant", "content": text}
+            entry: dict = {"role": "assistant", "content": text or ""}
             if calls:
                 entry["tool_calls"] = calls
             out.append(entry)
@@ -362,7 +375,8 @@ async def _exec_tool(
 
 # ── AgentSession ──────────────────────────────────────────────────────────────
 
-_MAX_TURNS = 30
+_MAX_TURNS      = 30
+_MAX_TOOL_CALLS = 12   # hard cap per session turn to prevent runaway loops
 
 
 class AgentSession:
@@ -396,6 +410,9 @@ class AgentSession:
             AgentMessage(role="user", content=[TextBlock(text=user_text)])
         )
 
+        total_tool_calls = 0
+        seen_calls: set[tuple] = set()  # (name, stable_args_repr) — dedup guard
+
         for _ in range(_MAX_TURNS):
             assistant_msg = AgentMessage(role="assistant")
             tool_calls:  list[ToolCallBlock] = []
@@ -427,7 +444,25 @@ class AgentSession:
 
             result_blocks: list[ToolResultBlock] = []
             for tc in tool_calls:
-                rb = await _exec_tool(tc, self._cwd, permission_cb, ask_cb)
+                call_key = (tc.name, json.dumps(tc.args, sort_keys=True, default=str))
+
+                if total_tool_calls >= _MAX_TOOL_CALLS:
+                    rb = ToolResultBlock(
+                        tool_call_id=tc.id,
+                        content="Tool call limit reached. Please synthesise findings and answer the user now.",
+                        is_error=True,
+                    )
+                elif call_key in seen_calls:
+                    rb = ToolResultBlock(
+                        tool_call_id=tc.id,
+                        content=f"Duplicate call: {tc.name} with the same arguments was already executed. Use the previous result.",
+                        is_error=True,
+                    )
+                else:
+                    seen_calls.add(call_key)
+                    total_tool_calls += 1
+                    rb = await _exec_tool(tc, self._cwd, permission_cb, ask_cb)
+
                 result_blocks.append(rb)
                 yield AgentStep("tool_call_end", {
                     "name":     tc.name,
