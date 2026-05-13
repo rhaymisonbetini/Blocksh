@@ -224,6 +224,15 @@ class MainWindow(QMainWindow):
         if self._panels:
             self._panels[self._active_index].focus_input()
 
+    def _on_ai_chat_opened(self) -> None:
+        self._ai_sidebar_was_collapsed = self._sidebar._collapsed
+        if not self._sidebar._collapsed:
+            self._sidebar._set_collapsed(True)
+
+    def _on_ai_chat_closed(self) -> None:
+        if not getattr(self, "_ai_sidebar_was_collapsed", False):
+            self._sidebar._set_collapsed(False)
+
     def _esc_settings(self) -> None:
         if self._right_stack.currentIndex() == 1:
             self._close_settings()
@@ -238,6 +247,8 @@ class MainWindow(QMainWindow):
         container.favorite_requested.connect(self._on_favorite_requested)
         container.env_file_detected.connect(self._on_env_file_detected)
         container.open_projects_requested.connect(self._on_open_projects_from_empty)
+        container.ai_chat_opened.connect(self._on_ai_chat_opened)
+        container.ai_chat_closed.connect(self._on_ai_chat_closed)
         self._panels.append(container)
         self._stack.addWidget(container)
         self._tab_bar.add_tab(f"Terminal {len(self._panels)}")

@@ -134,6 +134,8 @@ class TerminalPanel(QWidget):
     env_file_detected        = Signal(str, str)     # (cwd, env_file_path)
     focused                  = Signal()             # emitted when any child area is clicked
     open_projects_requested  = Signal()             # empty-state "Open Project" button
+    ai_chat_opened           = Signal()             # emitted when AI overlay becomes visible
+    ai_chat_closed           = Signal()             # emitted when AI overlay is dismissed
 
     def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
         super().__init__(parent)
@@ -591,14 +593,18 @@ class TerminalPanel(QWidget):
             self._agent_session = AiService.instance().create_session(self._session.cwd)
 
         # Attach session to panel and show
+        was_hidden = not self._ai_panel.isVisible()
         self._ai_panel.attach_session(self._agent_session)
         self._ai_panel.setGeometry(self.rect())
         self._ai_panel.show()
         self._ai_panel.raise_()
         self._ai_panel.submit(request)
+        if was_hidden:
+            self.ai_chat_opened.emit()
 
     def _on_ai_panel_closed(self) -> None:
         self._input_bar.focus()
+        self.ai_chat_closed.emit()
 
     # ── .env detection ────────────────────────────────────────────────────────
 

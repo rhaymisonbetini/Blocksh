@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (
     QPushButton, QPlainTextEdit, QTextEdit, QFrame, QSizePolicy,
 )
 from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QFont, QFontMetrics, QTextCursor, QKeyEvent
+from PySide6.QtGui import QFont, QTextCursor, QKeyEvent
 
-from .theme import Palette, ThemeManager, TY
+from .theme import Palette, ThemeManager, TY, FONT_FAMILY
 
 
 # ── tool call row ─────────────────────────────────────────────────────────────
@@ -24,25 +24,31 @@ _TOOL_ICONS = {
 class _ToolCallRow(QWidget):
     def __init__(self, name: str, args_preview: str, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("ToolCallRow")
         self._name = name
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(8)
 
         icon = QLabel(_TOOL_ICONS.get(name, "🔧"))
-        icon.setFixedWidth(18)
+        icon.setFixedWidth(16)
         icon.setStyleSheet(f"background: transparent; font-size: {TY.base}px;")
         layout.addWidget(icon)
 
         preview = args_preview[:60] + ("…" if len(args_preview) > 60 else "")
         self._label = QLabel(f"<b>{name}</b>({preview})")
         self._label.setStyleSheet("background: transparent;")
+        self._label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(self._label, 1)
 
         self._status = QLabel("…")
-        self._status.setFixedWidth(20)
+        self._status.setFixedWidth(18)
+        self._status.setAlignment(Qt.AlignCenter)
         self._status.setStyleSheet("background: transparent;")
         layout.addWidget(self._status)
+
+        p = ThemeManager.instance().current
+        self.apply_theme(p)
 
     def set_result(self, result: str, is_error: bool) -> None:
         self._status.setText("✗" if is_error else "✓")
@@ -54,8 +60,14 @@ class _ToolCallRow(QWidget):
             self._label.setToolTip(preview)
 
     def apply_theme(self, p: Palette) -> None:
-        self.setStyleSheet(f"QWidget {{ background: {p.bg_overlay}; border-radius: 3px; }}")
-        self._label.setStyleSheet(f"color: {p.fg_muted}; background: transparent; font-size: {TY.mono_sm}px;")
+        self.setStyleSheet(
+            f"QWidget#ToolCallRow {{ background: {p.bg_overlay}; border-radius: 6px;"
+            f" border: 1px solid {p.border}; }}"
+        )
+        self._label.setStyleSheet(
+            f"color: {p.fg_muted}; background: transparent;"
+            f" font-family: '{FONT_FAMILY}'; font-size: {TY.mono_sm}px;"
+        )
 
 
 # ── permission / ask inline widget ────────────────────────────────────────────
@@ -67,9 +79,10 @@ class _InlinePrompt(QWidget):
 
     def __init__(self, question: str, mode: str, parent=None) -> None:
         super().__init__(parent)
-        self._mode = mode  # "permission" or "ask"
+        self.setObjectName("InlinePrompt")
+        self._mode = mode
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(8)
 
         icon = QLabel("🤖")
@@ -104,6 +117,9 @@ class _InlinePrompt(QWidget):
             self._input.installEventFilter(self)
             layout.addWidget(send)
 
+        p = ThemeManager.instance().current
+        self.apply_theme(p)
+
     def _on_send(self) -> None:
         text = self._input.toPlainText().strip()
         self.hide()
@@ -118,9 +134,13 @@ class _InlinePrompt(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(
-            f"QWidget {{ background: {p.bg_overlay}; border: 1px solid {p.border}; border-radius: 4px; }}"
+            f"QWidget#InlinePrompt {{ background: {p.bg_overlay};"
+            f" border: 1px solid {p.border}; border-radius: 8px; }}"
         )
-        self._lbl.setStyleSheet(f"color: {p.fg}; background: transparent; font-size: {TY.mono_sm}px;")
+        self._lbl.setStyleSheet(
+            f"color: {p.fg}; background: transparent;"
+            f" font-family: '{FONT_FAMILY}'; font-size: {TY.mono_sm}px;"
+        )
 
 
 # ── assistant turn widget ─────────────────────────────────────────────────────
@@ -128,18 +148,20 @@ class _InlinePrompt(QWidget):
 class _AssistantTurn(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("AssistantTurn")
         self._accumulated = ""
         self._tool_rows: list[_ToolCallRow] = []
         self._pending_prompts: list[_InlinePrompt] = []
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 4)
-        layout.setSpacing(3)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
 
         self._tools_container = QWidget()
+        self._tools_container.setStyleSheet("background: transparent;")
         self._tools_layout    = QVBoxLayout(self._tools_container)
         self._tools_layout.setContentsMargins(0, 0, 0, 0)
-        self._tools_layout.setSpacing(2)
+        self._tools_layout.setSpacing(4)
         layout.addWidget(self._tools_container)
 
         self._text_edit = QTextEdit()
@@ -152,6 +174,7 @@ class _AssistantTurn(QWidget):
         layout.addWidget(self._text_edit)
 
         self._prompts_container = QWidget()
+        self._prompts_container.setStyleSheet("background: transparent;")
         self._prompts_layout    = QVBoxLayout(self._prompts_container)
         self._prompts_layout.setContentsMargins(0, 0, 0, 0)
         self._prompts_layout.setSpacing(4)
@@ -196,17 +219,15 @@ class _AssistantTurn(QWidget):
         self._text_edit.setFixedHeight(max(doc_h + 4, 20))
 
     def apply_theme(self, p: Palette) -> None:
-        self.setStyleSheet(f"QWidget {{ background: {p.bg_surface}; }}")
+        self.setStyleSheet(
+            f"QWidget#AssistantTurn {{ background: {p.bg_surface};"
+            f" border-radius: 10px; border-left: 3px solid {p.blue}; }}"
+        )
         self._text_edit.setStyleSheet(
             f"QTextEdit {{ background: transparent; border: none; color: {p.fg}; }}"
         )
-        _s_sz = 11
-        try:
-            from ..services.settings_service import SettingsService
-            _s_sz = SettingsService.instance().get().font_size_output or 11
-        except Exception:
-            pass
-        f = QFont("Monospace", _s_sz)
+        f = QFont(FONT_FAMILY)
+        f.setPixelSize(TY.mono_base)
         self._text_edit.setFont(f)
         for row in self._tool_rows:
             row.apply_theme(p)
@@ -224,8 +245,7 @@ class _UserBubble(QWidget):
         layout.addStretch()
         lbl = QLabel(text)
         lbl.setWordWrap(True)
-        lbl.setMaximumWidth(400)
-        lbl.setStyleSheet("padding: 6px 10px; border-radius: 6px;")
+        lbl.setMaximumWidth(420)
         layout.addWidget(lbl)
         self._lbl = lbl
         p = ThemeManager.instance().current
@@ -234,8 +254,9 @@ class _UserBubble(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self._lbl.setStyleSheet(
-            f"background: {p.blue}; color: {p.bg}; padding: 6px 10px;"
-            f" border-radius: 6px; font-size: {TY.base}px;"
+            f"background: {p.blue}; color: {p.bg}; padding: 8px 12px;"
+            f" border-radius: 10px; font-family: '{FONT_FAMILY}';"
+            f" font-size: {TY.mono_base}px;"
         )
 
 
@@ -250,8 +271,8 @@ class _ConversationView(QScrollArea):
 
         self._container = QWidget()
         self._layout    = QVBoxLayout(self._container)
-        self._layout.setContentsMargins(12, 8, 12, 8)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(16, 12, 16, 12)
+        self._layout.setSpacing(10)
         self._layout.addStretch()
         self.setWidget(self._container)
 
@@ -277,7 +298,6 @@ class _ConversationView(QScrollArea):
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(
             f"QScrollArea {{ background: {p.bg}; border: none; }}"
-            f"QWidget#ai_conv {{ background: {p.bg}; }}"
         )
         self._container.setStyleSheet(f"background: {p.bg};")
 
@@ -289,21 +309,33 @@ class _AiInputBar(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(6)
+        self.setObjectName("AiInputBar")
+        self.setFixedHeight(64)
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(12, 10, 12, 10)
+        outer.setSpacing(0)
+
+        # inner card container
+        self._card = QFrame()
+        self._card.setObjectName("AiInputCard")
+        card_layout = QHBoxLayout(self._card)
+        card_layout.setContentsMargins(10, 6, 8, 6)
+        card_layout.setSpacing(8)
 
         self._edit = QPlainTextEdit()
         self._edit.setFixedHeight(36)
         self._edit.setPlaceholderText("Ask anything… (Enter to send, Shift+Enter for newline)")
         self._edit.installEventFilter(self)
-        layout.addWidget(self._edit, 1)
+        card_layout.addWidget(self._edit, 1)
 
         self._send = QPushButton("Send ↵")
-        self._send.setFixedHeight(32)
-        self._send.setFixedWidth(80)
+        self._send.setFixedHeight(28)
+        self._send.setFixedWidth(72)
         self._send.clicked.connect(self._on_send)
-        layout.addWidget(self._send)
+        card_layout.addWidget(self._send)
+
+        outer.addWidget(self._card)
 
         p = ThemeManager.instance().current
         self.apply_theme(p)
@@ -332,18 +364,22 @@ class _AiInputBar(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(
-            f"QWidget {{ background: {p.bg_overlay};"
+            f"QWidget#AiInputBar {{ background: {p.bg_overlay};"
             f" border-top: 1px solid {p.border}; }}"
         )
+        self._card.setStyleSheet(
+            f"QFrame#AiInputCard {{ background: {p.bg_surface};"
+            f" border: 1px solid {p.border}; border-radius: 10px; }}"
+            f"QFrame#AiInputCard:focus-within {{ border-color: {p.blue}; }}"
+        )
         self._edit.setStyleSheet(
-            f"QPlainTextEdit {{ background: {p.bg_surface}; color: {p.fg};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.base}px;"
-            f" padding: 4px 6px; }}"
-            f"QPlainTextEdit:focus {{ border-color: {p.blue}; }}"
+            f"QPlainTextEdit {{ background: transparent; color: {p.fg}; border: none;"
+            f" font-family: '{FONT_FAMILY}'; font-size: {TY.mono_base}px; padding: 2px 4px; }}"
         )
         self._send.setStyleSheet(
             f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-            f" border-radius: 4px; font-size: {TY.mono_sm}px; font-weight: bold; }}"
+            f" border-radius: 6px; font-family: '{FONT_FAMILY}';"
+            f" font-size: {TY.mono_sm}px; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #74b0e8; }}"
             f"QPushButton:disabled {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
         )
@@ -355,7 +391,7 @@ class AiPanel(QWidget):
     """Floating overlay panel for multi-turn AI conversations."""
 
     closed          = Signal()
-    command_ready   = Signal(str)      # CMD: line produced by agent
+    command_ready   = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -375,7 +411,6 @@ class AiPanel(QWidget):
     # ── public API ────────────────────────────────────────────────────────────
 
     def attach_session(self, session) -> None:
-        """Bind an AgentSession to this panel."""
         self._session = session
 
     def submit(self, text: str) -> None:
@@ -397,32 +432,47 @@ class AiPanel(QWidget):
         root.setSpacing(0)
 
         # Header
-        header = QWidget()
-        hlay   = QHBoxLayout(header)
-        hlay.setContentsMargins(12, 8, 12, 8)
-        hlay.setSpacing(8)
-        title = QLabel("🤖  AI Assistant")
-        title.setStyleSheet(f"font-size: {TY.xl}px; font-weight: bold; background: transparent;")
-        hlay.addWidget(title, 1)
+        self._header = QWidget()
+        self._header.setObjectName("AiHeader")
+        self._header.setFixedHeight(52)
+        hlay = QHBoxLayout(self._header)
+        hlay.setContentsMargins(16, 0, 12, 0)
+        hlay.setSpacing(10)
 
-        new_btn = QPushButton("New")
-        new_btn.setFixedHeight(26)
-        new_btn.setFixedWidth(50)
-        new_btn.clicked.connect(self._on_new)
-        hlay.addWidget(new_btn)
+        self._title_icon = QLabel("✦")
+        self._title_icon.setStyleSheet(f"font-size: {TY.lg}px; background: transparent;")
+        hlay.addWidget(self._title_icon)
 
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(26, 26)
-        close_btn.clicked.connect(self._on_close)
-        hlay.addWidget(close_btn)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(1)
+        self._title_lbl = QLabel("AI Assistant")
+        self._title_lbl.setStyleSheet(
+            f"font-family: '{FONT_FAMILY}'; font-size: {TY.lg}px;"
+            f" font-weight: bold; background: transparent;"
+        )
+        title_col.addWidget(self._title_lbl)
+        self._subtitle_lbl = QLabel("Multi-turn agent")
+        self._subtitle_lbl.setStyleSheet(
+            f"font-family: '{FONT_FAMILY}'; font-size: {TY.xs}px; background: transparent;"
+        )
+        title_col.addWidget(self._subtitle_lbl)
+        hlay.addLayout(title_col, 1)
 
-        self._header     = header
-        self._new_btn    = new_btn
-        self._close_btn  = close_btn
-        root.addWidget(header)
+        self._new_btn = QPushButton("New Chat")
+        self._new_btn.setFixedHeight(26)
+        self._new_btn.clicked.connect(self._on_new)
+        hlay.addWidget(self._new_btn)
+
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setFixedSize(26, 26)
+        self._close_btn.clicked.connect(self._on_close)
+        hlay.addWidget(self._close_btn)
+
+        root.addWidget(self._header)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("AiSep")
         root.addWidget(sep)
 
         self._conv = _ConversationView(self)
@@ -546,7 +596,6 @@ class AiPanel(QWidget):
             self._worker = None
         if self._session is not None:
             self._session.clear()
-        # Clear conversation view
         while self._conv._layout.count() > 1:
             item = self._conv._layout.takeAt(0)
             if item.widget():
@@ -579,15 +628,32 @@ class AiPanel(QWidget):
             f"AiPanel {{ background: {p.bg}; border-left: 1px solid {p.border}; }}"
         )
         self._header.setStyleSheet(
-            f"QWidget {{ background: {p.bg_overlay}; border-bottom: 1px solid {p.border}; }}"
+            f"QWidget#AiHeader {{ background: {p.bg_overlay};"
+            f" border-bottom: 1px solid {p.border}; }}"
+        )
+        self._title_icon.setStyleSheet(
+            f"color: {p.blue}; font-size: {TY.lg}px; background: transparent;"
+        )
+        self._title_lbl.setStyleSheet(
+            f"color: {p.fg}; font-family: '{FONT_FAMILY}'; font-size: {TY.lg}px;"
+            f" font-weight: bold; background: transparent;"
+        )
+        self._subtitle_lbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-family: '{FONT_FAMILY}';"
+            f" font-size: {TY.xs}px; background: transparent;"
         )
         self._new_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.mono_sm}px; }}"
-            f"QPushButton:hover {{ color: {p.fg}; border-color: {p.fg}; }}"
+            f" border: 1px solid {p.border}; border-radius: 6px;"
+            f" font-family: '{FONT_FAMILY}'; font-size: {TY.mono_sm}px;"
+            f" padding: 2px 10px; }}"
+            f"QPushButton:hover {{ color: {p.fg}; border-color: {p.fg_muted}; }}"
         )
         self._close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: none; font-size: {TY.lg}px; }}"
+            f" border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.red}; }}"
+        )
+        self.findChild(QFrame, "AiSep").setStyleSheet(
+            f"QFrame {{ color: {p.border}; max-height: 1px; }}"
         )

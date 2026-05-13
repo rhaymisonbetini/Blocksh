@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/Linux-Compatible-a6e3a1?style=for-the-badge&logo=linux&logoColor=white&labelColor=0d0f1a)](https://kernel.org)
 [![Theme](https://img.shields.io/badge/Catppuccin-Mocha-cba6f7?style=for-the-badge&labelColor=0d0f1a)](https://catppuccin.com)
 [![PTY](https://img.shields.io/badge/PTY-Full%20Support-89dceb?style=for-the-badge&labelColor=0d0f1a)](https://en.wikipedia.org/wiki/Pseudoterminal)
-[![Version](https://img.shields.io/badge/version-v0.9.0-fab387?style=for-the-badge&labelColor=0d0f1a)](https://github.com/rhaymisonbetini/Blocksh/releases)
+[![Version](https://img.shields.io/badge/version-v0.9.2-fab387?style=for-the-badge&labelColor=0d0f1a)](https://github.com/rhaymisonbetini/Blocksh/releases)
 
 <br>
 
@@ -116,40 +116,40 @@ Since v0.2.0, Blocksh has shipped many more features across subsequent releases:
 <tr>
 <td align="center" width="50%">
 
-**Full Navigation Sidebar**
+**AI Assistant — Clean Chat Interface**
 
-<img src="img_samples/Screenshot%20from%202026-05-12%2010-33-17.png" alt="Blocksh — Sidebar with SSH and Workflows" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-13%2014-53-24.png" alt="Blocksh — AI Assistant redesigned panel" width="100%">
 
-*Terminal · History · Favorites · Projects · SSH · Workflows — plus Settings, Themes, and profile avatar*
+*Redesigned floating panel with tool call rows, user bubbles, streaming responses and auto-collapsed sidebar*
 
 </td>
 <td align="center" width="50%">
 
-**Settings — AI Assistant & Theme Creator**
+**Navigation Sidebar + Empty State**
 
-<img src="img_samples/Screenshot%20from%202026-05-12%2010-33-30.png" alt="Blocksh — Settings with AI configuration" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-13%2014-53-32.png" alt="Blocksh — Sidebar and empty state" width="100%">
 
-*Configure Ollama backend, model, and host; live theme color picker with user theme management*
+*All 7 sidebar pages — Terminal · History · Favorites · Projects · SSH · Workflows — with quick-action empty state*
 
 </td>
 </tr>
 <tr>
 <td align="center" width="50%">
 
-**AI Assistant — Streaming Conversation**
+**Block-Based Terminal Output**
 
-<img src="img_samples/Screenshot%20from%202026-05-12%2010-34-20.png" alt="Blocksh — AI Assistant floating panel" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-13%2014-53-59.png" alt="Blocksh — Terminal command blocks with ANSI output" width="100%">
 
-*Floating AI panel with markdown rendering, tool call indicators, and persistent conversation history*
+*Uniform typography scale — prompt, command and output all at 12–13 px with full ANSI color rendering*
 
 </td>
 <td align="center" width="50%">
 
-**AI + Terminal Side by Side**
+**Settings + Theme Creator**
 
-<img src="img_samples/Screenshot%20from%202026-05-12%2010-35-02.png" alt="Blocksh — Terminal and AI Assistant split view" width="100%">
+<img src="img_samples/Screenshot%20from%202026-05-13%2014-54-05.png" alt="Blocksh — Settings panel with theme creator" width="100%">
 
-*AI reads and explains files from your filesystem while the terminal runs commands below*
+*Appearance controls, terminal behavior and live 24-token color picker; sidebar auto-collapses when Settings opens*
 
 </td>
 </tr>
@@ -784,6 +784,8 @@ Activate via **Themes** in the sidebar — no restart required.
 | v0.7.x  | Split Panes — horizontal/vertical splits, active tracking, splitter collapse | ✅ Done |
 | v0.8.x  | CRUD visibility — ⋮ buttons always visible; PTY overlay fix; font size fix; sidebar scroll fix | ✅ Done |
 | v0.9.0  | AI Agent rewrite — streaming `AgentSession`, floating `AiPanel`, multi-turn context | ✅ Done |
+| v0.9.1  | Typography scale — Ubuntu Mono, px-based tokens, visual polish across all panels | ✅ Done |
+| v0.9.2  | AI panel redesign — clean chat UI, tool call cards, sidebar auto-collapse on AI/Settings | ✅ Done |
 
 ---
 
