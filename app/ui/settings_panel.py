@@ -26,6 +26,7 @@ from ..services.settings_service import SettingsService
 
 def _section_frame(title: str, p: Palette, danger: bool = False) -> tuple[QFrame, QVBoxLayout]:
     frame = QFrame()
+    frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     border_color = p.red_ui if danger else p.border
     frame.setStyleSheet(
         f"QFrame {{ background: {p.bg_surface}; border: 1px solid {border_color};"
@@ -476,6 +477,8 @@ class _AppearanceSection(QWidget):
         self._font_combo = QFontComboBox()
         self._font_combo.setFontFilters(QFontComboBox.MonospacedFonts)
         self._font_combo.setCurrentFont(QFont(s.font_family))
+        self._font_combo.setMinimumContentsLength(14)
+        self._font_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._font_combo.setStyleSheet(ctrl_style)
         self._font_combo.currentFontChanged.connect(
             lambda f: SettingsService.instance().update(font_family=f.family())
@@ -611,6 +614,8 @@ class _TerminalSection(QWidget):
         self._shell_combo.addItems(shells)
         if s.default_shell in shells:
             self._shell_combo.setCurrentText(s.default_shell)
+        self._shell_combo.setMinimumContentsLength(8)
+        self._shell_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._shell_combo.setStyleSheet(ctrl_style)
         self._shell_combo.currentTextChanged.connect(
             lambda t: SettingsService.instance().update(default_shell=t)
@@ -751,6 +756,8 @@ class _AiSection(QWidget):
         self._backend_combo.addItems(["Ollama (offline)", "Anthropic (Claude)", "OpenAI (GPT)"])
         self._backend_combo.setCurrentIndex(_BACKEND_NAMES.index(s.ai_backend)
                                             if s.ai_backend in _BACKEND_NAMES else 0)
+        self._backend_combo.setMinimumContentsLength(10)
+        self._backend_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._backend_combo.setStyleSheet(ctrl_style)
         self._backend_combo.currentIndexChanged.connect(self._on_backend_changed)
         vbox.addWidget(_row_widget("Backend", self._backend_combo, p))
@@ -933,6 +940,7 @@ class SettingsPanel(QWidget):
         self._proj_repo = project_repo
         self._conn      = conn
         self._sections: list[QWidget] = []
+        self.setMinimumWidth(0)
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -971,6 +979,7 @@ class SettingsPanel(QWidget):
         cols = QHBoxLayout()
         cols.setContentsMargins(0, 0, 0, 0)
         cols.setSpacing(16)
+        cols.setSizeConstraint(QHBoxLayout.SizeConstraint.SetNoConstraint)
 
         left_col = QVBoxLayout()
         left_col.setContentsMargins(0, 0, 0, 0)

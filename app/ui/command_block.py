@@ -274,11 +274,11 @@ class CommandBlock(QWidget):
             )
         if self._prompt_lbl:
             self._prompt_lbl.setStyleSheet(
-                f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
+                f"color: {p.green}; font-family: {mono}; font-size: {TY.mono_lg}px;"
                 f" font-weight: bold; background: transparent;"
             )
         if self._cmd_lbl:
-            self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
+            self._cmd_lbl.setStyleSheet(f"color: {p.fg}; font-family: {mono}; font-size: {TY.mono_lg}px; background: transparent;")
         if self._ts_lbl:
             self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
         if self._menu_btn:
@@ -367,16 +367,13 @@ class CommandBlock(QWidget):
 
         self._prompt_lbl = QLabel("$")
         self._prompt_lbl.setStyleSheet(
-            f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
+            f"color: {p.green}; font-family: {mono}; font-size: {TY.mono_lg}px;"
             f" font-weight: bold; background: transparent;"
         )
         layout.addWidget(self._prompt_lbl)
 
-        cmd_font = QFont(mono, TY.lg)
-        cmd_font.setBold(True)
         self._cmd_lbl = QLabel(self._block.command.text)
-        self._cmd_lbl.setFont(cmd_font)
-        self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
+        self._cmd_lbl.setStyleSheet(f"color: {p.fg}; font-family: {mono}; font-size: {TY.mono_lg}px; background: transparent;")
         layout.addWidget(self._cmd_lbl)
 
         layout.addStretch()

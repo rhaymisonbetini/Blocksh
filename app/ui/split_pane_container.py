@@ -99,6 +99,8 @@ class SplitPaneContainer(QWidget):
     favorite_requested       = Signal(str, str, str)
     env_file_detected        = Signal(str, str)
     open_projects_requested  = Signal()
+    ai_chat_opened           = Signal()
+    ai_chat_closed           = Signal()
 
     def __init__(
         self,
@@ -138,6 +140,8 @@ class SplitPaneContainer(QWidget):
         panel.env_file_detected.connect(self.env_file_detected)
         panel.focused.connect(lambda p=panel: self._on_panel_focused(p))
         panel.open_projects_requested.connect(self.open_projects_requested)
+        panel.ai_chat_opened.connect(self.ai_chat_opened)
+        panel.ai_chat_closed.connect(self.ai_chat_closed)
 
         wrapper = _PaneWrapper(panel)
         panel.cwd_changed.connect(wrapper.set_title)
