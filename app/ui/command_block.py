@@ -184,6 +184,7 @@ class CommandBlock(QWidget):
         self._resize_pending: bool = False
         self._ai_available: bool = False
         self._has_error: bool = False
+        self._hovered: bool = False
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -281,23 +282,7 @@ class CommandBlock(QWidget):
             self._cmd_lbl.setStyleSheet(f"color: {p.fg}; font-family: {mono}; font-size: {TY.mono_lg}px; background: transparent;")
         if self._ts_lbl:
             self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
-        if self._menu_btn:
-            self._menu_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
-                f"QPushButton:hover {{ color: {p.fg}; }}"
-            )
-        if self._explain_btn:
-            self._explain_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-                f" font-size: {TY.sm}px; padding: 0 2px; }}"
-                f"QPushButton:hover {{ color: {p.fg}; }}"
-            )
-        if self._fix_btn:
-            self._fix_btn.setStyleSheet(
-                f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
-                f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
-                f"QPushButton:hover {{ background: {p.red_ui}; }}"
-            )
+        self._refresh_action_btns(self._hovered)
         if self._explanation_panel:
             self._explanation_panel.setStyleSheet(
                 f"QFrame {{ background: {p.bg_overlay}; border-radius: 4px; border: none; }}"
@@ -385,11 +370,9 @@ class CommandBlock(QWidget):
         self._explain_btn = QPushButton("?")
         self._explain_btn.setFixedSize(22, 22)
         self._explain_btn.setToolTip("Explain with AI")
-        self._explain_btn.setVisible(False)
+        self._explain_btn.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._explain_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-            f" font-size: {TY.sm}px; padding: 0 2px; }}"
-            f"QPushButton:hover {{ color: {p.fg}; }}"
+            "QPushButton { background: transparent; color: transparent; border: none; padding: 0 2px; }"
         )
         self._explain_btn.clicked.connect(self._on_explain_clicked)
         layout.addWidget(self._explain_btn)
@@ -397,21 +380,18 @@ class CommandBlock(QWidget):
         self._fix_btn = QPushButton("Fix ↗")
         self._fix_btn.setFixedHeight(22)
         self._fix_btn.setToolTip("Fix this command with AI")
-        self._fix_btn.setVisible(False)
+        self._fix_btn.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._fix_btn.setStyleSheet(
-            f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
-            f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
-            f"QPushButton:hover {{ background: {p.red_ui}; }}"
+            "QPushButton { background: transparent; color: transparent; border: none; padding: 2px 10px; }"
         )
         self._fix_btn.clicked.connect(self._on_fix_clicked)
         layout.addWidget(self._fix_btn)
 
         self._menu_btn = QPushButton("⋮")
         self._menu_btn.setFixedSize(22, 22)
-        self._menu_btn.setVisible(False)
+        self._menu_btn.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
-            f"QPushButton:hover {{ color: {p.fg}; }}"
+            "QPushButton { background: transparent; color: transparent; border: none; }"
         )
         self._menu_btn.clicked.connect(self._show_menu)
         layout.addWidget(self._menu_btn)
@@ -524,24 +504,52 @@ class CommandBlock(QWidget):
         if AiService.instance().is_enabled():
             self._ai_available = True
 
+        self._refresh_action_btns(self._hovered)
         self._sync_height()
 
-    def enterEvent(self, event) -> None:
+    def _refresh_action_btns(self, hovered: bool) -> None:
+        p = ThemeManager.instance().current
+        show_menu    = hovered
+        show_explain = hovered and self._ai_available
+        show_fix     = hovered and self._ai_available and self._has_error
+
         if self._menu_btn:
-            self._menu_btn.setVisible(True)
-        if self._ai_available and self._explain_btn:
-            self._explain_btn.setVisible(True)
-        if self._ai_available and self._has_error and self._fix_btn:
-            self._fix_btn.setVisible(True)
+            self._menu_btn.setAttribute(Qt.WA_TransparentForMouseEvents, not show_menu)
+            self._menu_btn.setStyleSheet(
+                (f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
+                 f"QPushButton:hover {{ color: {p.fg}; }}")
+                if show_menu else
+                "QPushButton { background: transparent; color: transparent; border: none; }"
+            )
+
+        if self._explain_btn:
+            self._explain_btn.setAttribute(Qt.WA_TransparentForMouseEvents, not show_explain)
+            self._explain_btn.setStyleSheet(
+                (f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
+                 f" font-size: {TY.sm}px; padding: 0 2px; }}"
+                 f"QPushButton:hover {{ color: {p.fg}; }}")
+                if show_explain else
+                "QPushButton { background: transparent; color: transparent; border: none; padding: 0 2px; }"
+            )
+
+        if self._fix_btn:
+            self._fix_btn.setAttribute(Qt.WA_TransparentForMouseEvents, not show_fix)
+            self._fix_btn.setStyleSheet(
+                (f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
+                 f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
+                 f"QPushButton:hover {{ background: {p.red_ui}; }}")
+                if show_fix else
+                "QPushButton { background: transparent; color: transparent; border: none; padding: 2px 10px; }"
+            )
+
+    def enterEvent(self, event) -> None:
+        self._hovered = True
+        self._refresh_action_btns(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
-        if self._menu_btn:
-            self._menu_btn.setVisible(False)
-        if self._explain_btn:
-            self._explain_btn.setVisible(False)
-        if self._fix_btn:
-            self._fix_btn.setVisible(False)
+        self._hovered = False
+        self._refresh_action_btns(False)
         super().leaveEvent(event)
 
     def _build_output_empty(self) -> _OutputEdit:

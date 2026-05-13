@@ -388,6 +388,8 @@ class TerminalPanel(QWidget):
         self._scroll.setVisible(False)
         self._sep.setVisible(False)
         self._input_bar.setVisible(False)
+        self._empty_state.setVisible(False)
+        self._permission_banner.setVisible(False)
 
         self._pty_widget = PtyWidget(
             text, self._session.cwd, self._session.env, parent=self, direct=direct
@@ -423,6 +425,7 @@ class TerminalPanel(QWidget):
         self._scroll.setVisible(True)
         self._sep.setVisible(True)
         self._input_bar.setVisible(True)
+        self._permission_banner.setVisible(True)
         self._input_bar.focus()
 
         if self._active_cmd:
