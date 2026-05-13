@@ -14,7 +14,7 @@ from .ansi_renderer import render_ansi, render_ansi_with_links
 from .clickable_output import ClickableOutput
 from PySide6.QtCore import Signal, Qt, QSize, QTimer
 from ..domain.block import Block
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, get_mono_font, TY
 from ..services.settings_service import SettingsService
 
 # Matches ANSI/VT100 escape sequences: CSI (ESC[…), and other single-char ESC sequences
@@ -182,6 +182,8 @@ class CommandBlock(QWidget):
         self._workers: list = []
         self._raw_output: str = ""
         self._resize_pending: bool = False
+        self._ai_available: bool = False
+        self._has_error: bool = False
         self._build_ui()
 
         _tm = ThemeManager.instance()
@@ -203,9 +205,7 @@ class CommandBlock(QWidget):
                 f" border: 1px solid {p.blue}; }}"
             )
         else:
-            self._card.setStyleSheet(
-                f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
-            )
+            self._update_card_style(p)
 
     def _sync_height(self) -> None:
         """Pin card and CommandBlock to the exact pixel height their content needs.
@@ -228,7 +228,7 @@ class CommandBlock(QWidget):
             self._output_widget.setVisible(False)
             if self._toggle_btn:
                 self._toggle_btn.setText("▸")
-            self._sync_height()
+            self._flush_height()
 
     def expand(self) -> None:
         if self._output_widget:
@@ -236,13 +236,33 @@ class CommandBlock(QWidget):
             self._output_widget.setVisible(True)
             if self._toggle_btn:
                 self._toggle_btn.setText("▾")
-            self._sync_height()
+            self._flush_height()
+
+    def _flush_height(self) -> None:
+        """Force layout recalculation then pin height.
+
+        setVisible() posts a LayoutRequest event asynchronously, so sizeHint()
+        called immediately after still reflects the old (pre-visibility-change)
+        geometry. invalidate() + activate() flush the pending recalculation in
+        the same call stack, making sizeHint() return the correct value.
+        """
+        if self._card is None:
+            return
+        lay = self._card.layout()
+        lay.invalidate()
+        lay.activate()
+        self._sync_height()
+
+    def _update_card_style(self, p: Palette) -> None:
+        if not self._card:
+            return
+        self._card.setStyleSheet(
+            f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
+        )
 
     def apply_theme(self, p: Palette) -> None:
-        if self._card:
-            self._card.setStyleSheet(
-                f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
-            )
+        self._update_card_style(p)
+        mono = get_mono_font()
         if self._output_widget:
             self._output_widget.setStyleSheet(
                 f"QTextEdit {{ background: transparent; border: none;"
@@ -250,33 +270,33 @@ class CommandBlock(QWidget):
             )
         if self._cwd_lbl:
             self._cwd_lbl.setStyleSheet(
-                f"color: {p.blue}; font-family: Monospace; font-size: 9pt; background: transparent;"
+                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}px; background: transparent;"
             )
         if self._prompt_lbl:
             self._prompt_lbl.setStyleSheet(
-                f"color: {p.green}; font-family: Monospace; font-size: 10pt;"
+                f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
                 f" font-weight: bold; background: transparent;"
             )
         if self._cmd_lbl:
             self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
         if self._ts_lbl:
-            self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
+            self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
         if self._menu_btn:
             self._menu_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
         if self._explain_btn:
             self._explain_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-                f" font-size: 9pt; padding: 0 2px; }}"
+                f" font-size: {TY.sm}px; padding: 0 2px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
         if self._fix_btn:
             self._fix_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.red}; border: 1px solid {p.red};"
-                f" border-radius: 3px; font-size: 8pt; padding: 0 5px; }}"
-                f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
+                f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
+                f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
+                f"QPushButton:hover {{ background: {p.red_ui}; }}"
             )
         if self._explanation_panel:
             self._explanation_panel.setStyleSheet(
@@ -301,9 +321,6 @@ class CommandBlock(QWidget):
         card = QFrame()
         self._card = card
         card.setFrameShape(QFrame.NoFrame)
-        card.setStyleSheet(
-            f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
-        )
 
         layout = QVBoxLayout(card)
         layout.setContentsMargins(12, 6, 12, 6)
@@ -316,6 +333,7 @@ class CommandBlock(QWidget):
             self._output_widget = self._build_output(output)
             layout.addWidget(self._output_widget)
 
+        self._update_card_style(p)
         self._sync_height()
         return card
 
@@ -327,13 +345,14 @@ class CommandBlock(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        status_color = "#2ecc71" if self._block.exit_code == 0 else "#e74c3c"
+        mono = get_mono_font()
+        toggle_color = p.green if self._block.exit_code == 0 else p.blue
         self._toggle_btn = QPushButton("▾")
         self._toggle_btn.setFixedSize(16, 16)
         self._toggle_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {status_color}; border: none;"
-            f" font-size: 9pt; padding: 0; }}"
-            f"QPushButton:hover {{ color: {status_color}; opacity: 0.7; }}"
+            f"QPushButton {{ background: transparent; color: {toggle_color}; border: none;"
+            f" font-size: {TY.sm}px; padding: 0; }}"
+            f"QPushButton:hover {{ color: {toggle_color}; }}"
         )
         self._toggle_btn.clicked.connect(self._toggle_output)
         layout.addWidget(self._toggle_btn)
@@ -342,18 +361,18 @@ class CommandBlock(QWidget):
         if cwd_text:
             self._cwd_lbl = QLabel(cwd_text)
             self._cwd_lbl.setStyleSheet(
-                f"color: {p.blue}; font-family: Monospace; font-size: 9pt; background: transparent;"
+                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}px; background: transparent;"
             )
             layout.addWidget(self._cwd_lbl)
 
         self._prompt_lbl = QLabel("$")
         self._prompt_lbl.setStyleSheet(
-            f"color: {p.green}; font-family: Monospace; font-size: 10pt;"
+            f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
             f" font-weight: bold; background: transparent;"
         )
         layout.addWidget(self._prompt_lbl)
 
-        cmd_font = QFont("Monospace", 10)
+        cmd_font = QFont(mono, TY.lg)
         cmd_font.setBold(True)
         self._cmd_lbl = QLabel(self._block.command.text)
         self._cmd_lbl.setFont(cmd_font)
@@ -363,7 +382,7 @@ class CommandBlock(QWidget):
         layout.addStretch()
 
         self._ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
-        self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: 8pt; background: transparent;")
+        self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
         layout.addWidget(self._ts_lbl)
 
         self._explain_btn = QPushButton("?")
@@ -372,7 +391,7 @@ class CommandBlock(QWidget):
         self._explain_btn.setVisible(False)
         self._explain_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-            f" font-size: 9pt; padding: 0 2px; }}"
+            f" font-size: {TY.sm}px; padding: 0 2px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._explain_btn.clicked.connect(self._on_explain_clicked)
@@ -383,17 +402,18 @@ class CommandBlock(QWidget):
         self._fix_btn.setToolTip("Fix this command with AI")
         self._fix_btn.setVisible(False)
         self._fix_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.red}; border: 1px solid {p.red};"
-            f" border-radius: 3px; font-size: 8pt; padding: 0 5px; }}"
-            f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
+            f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
+            f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
+            f"QPushButton:hover {{ background: {p.red_ui}; }}"
         )
         self._fix_btn.clicked.connect(self._on_fix_clicked)
         layout.addWidget(self._fix_btn)
 
         self._menu_btn = QPushButton("⋮")
         self._menu_btn.setFixedSize(22, 22)
+        self._menu_btn.setVisible(False)
         self._menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: 13pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._menu_btn.clicked.connect(self._show_menu)
@@ -485,13 +505,16 @@ class CommandBlock(QWidget):
 
     def finalize(self, exit_code: int) -> None:
         self._block.exit_code = exit_code
-        status_color = "#2ecc71" if exit_code == 0 else "#e74c3c"
+        self._has_error = (exit_code != 0)
+        p = ThemeManager.instance().current
+        toggle_color = p.green if exit_code == 0 else p.red
         if self._toggle_btn:
             self._toggle_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {status_color}; border: none;"
-                f" font-size: 9pt; padding: 0; }}"
-                f"QPushButton:hover {{ color: {status_color}; opacity: 0.7; }}"
+                f"QPushButton {{ background: transparent; color: {toggle_color}; border: none;"
+                f" font-size: {TY.sm}px; padding: 0; }}"
+                f"QPushButton:hover {{ color: {toggle_color}; }}"
             )
+        self._update_card_style(p)
         if self._output_widget and self._raw_output:
             display = _process_cr_ansi(self._raw_output).rstrip()
             self._output_widget.setPlainText("")
@@ -502,12 +525,27 @@ class CommandBlock(QWidget):
 
         from ..services.ai_service import AiService
         if AiService.instance().is_enabled():
-            if self._explain_btn:
-                self._explain_btn.setVisible(True)
-            if self._fix_btn and exit_code != 0:
-                self._fix_btn.setVisible(True)
+            self._ai_available = True
 
         self._sync_height()
+
+    def enterEvent(self, event) -> None:
+        if self._menu_btn:
+            self._menu_btn.setVisible(True)
+        if self._ai_available and self._explain_btn:
+            self._explain_btn.setVisible(True)
+        if self._ai_available and self._has_error and self._fix_btn:
+            self._fix_btn.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self._menu_btn:
+            self._menu_btn.setVisible(False)
+        if self._explain_btn:
+            self._explain_btn.setVisible(False)
+        if self._fix_btn:
+            self._fix_btn.setVisible(False)
+        super().leaveEvent(event)
 
     def _build_output_empty(self) -> _OutputEdit:
         p = ThemeManager.instance().current
@@ -553,6 +591,7 @@ class CommandBlock(QWidget):
         self._output_widget.setVisible(self._expanded)
         if self._toggle_btn:
             self._toggle_btn.setText("▾" if self._expanded else "▸")
+        self._flush_height()
 
     def _show_menu(self):
         p = ThemeManager.instance().current
@@ -606,6 +645,7 @@ class CommandBlock(QWidget):
         worker.result_ready.connect(self._show_explanation)
         worker.error_occurred.connect(lambda msg: self._show_explanation(f"⚠  {msg}"))
         worker.finished.connect(self._reset_explain_btn)
+        worker.finished.connect(lambda w=worker: (self._workers.remove(w), w.deleteLater()) if w in self._workers else None)
         self._workers.append(worker)
         worker.start()
 

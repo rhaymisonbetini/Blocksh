@@ -4,7 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea, QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
+    QLabel, QPushButton,
 )
 from PySide6.QtCore import Signal, QPoint, Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -16,7 +17,7 @@ from .completion_popup import CompletionPopup
 from .input_bar import InputBar
 from .pty_widget import PtyWidget
 from .search_bar import SearchBar
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, TY
 from ..core.command_executor import BaseExecutor, CommandThread
 from ..core.shell_session import ShellSession
 from ..domain.command import Command
@@ -46,16 +47,93 @@ _INTERACTIVE_NO_ARGS = frozenset({
 })
 
 
+class _EmptyState(QWidget):
+    """Shown when no CommandBlocks exist; provides quick-action CTAs."""
+    open_project = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setSpacing(16)
+        layout.setContentsMargins(32, 32, 32, 32)
+
+        self._icon = QLabel(">_")
+        self._icon.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._icon)
+
+        self._heading = QLabel("No command running")
+        self._heading.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._heading)
+
+        self._subtitle = QLabel("Start by typing a command below or choose a quick action.")
+        self._subtitle.setAlignment(Qt.AlignCenter)
+        self._subtitle.setWordWrap(True)
+        layout.addWidget(self._subtitle)
+
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setSpacing(8)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setAlignment(Qt.AlignCenter)
+
+        self._btns: list[tuple[QPushButton, str]] = []
+        for label, cmd in [
+            ("Open Project",   ""),
+            ("Run README",     "cat README.md"),
+            ("List Files",     "ls -la"),
+        ]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(32)
+            btn.setMinimumWidth(110)
+            if cmd:
+                btn.clicked.connect(lambda _checked=False, c=cmd: self._run_cmd(c))
+            else:
+                btn.clicked.connect(self.open_project)
+            self._btns.append((btn, label))
+            btn_layout.addWidget(btn)
+
+        layout.addWidget(btn_row)
+        self._run_callback = None
+
+    def set_run_callback(self, cb) -> None:
+        self._run_callback = cb
+
+    def _run_cmd(self, cmd: str) -> None:
+        if self._run_callback:
+            self._run_callback(cmd)
+
+    def apply_theme(self, p) -> None:
+        self._icon.setStyleSheet(
+            f"font-size: 48px; color: {p.fg_dim}; background: transparent;"
+        )
+        self._heading.setStyleSheet(
+            f"font-size: {TY.xl}px; color: {p.fg}; background: transparent;"
+        )
+        self._subtitle.setStyleSheet(
+            f"font-size: {TY.sm}px; color: {p.fg_muted}; background: transparent;"
+        )
+        ghost_style = (
+            f"QPushButton {{ background: transparent; color: {p.fg_muted};"
+            f" border: 1px solid {p.border}; border-radius: 8px;"
+            f" font-size: {TY.base}px; padding: 0 12px; }}"
+            f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
+        )
+        for btn, _ in self._btns:
+            btn.setStyleSheet(ghost_style)
+
+
 class TerminalPanel(QWidget):
     """
     Self-contained terminal tab: owns ShellSession, HistoryService,
     the blocks scroll area, SearchBar, InputBar and CompletionPopup.
     """
 
-    cwd_changed        = Signal(str)          # emits cwd_display after every command
-    favorite_requested = Signal(str, str, str)  # name, command_text, cwd
-    env_file_detected  = Signal(str, str)     # (cwd, env_file_path)
-    focused            = Signal()             # emitted when any child area is clicked
+    cwd_changed              = Signal(str)          # emits cwd_display after every command
+    favorite_requested       = Signal(str, str, str)  # name, command_text, cwd
+    env_file_detected        = Signal(str, str)     # (cwd, env_file_path)
+    focused                  = Signal()             # emitted when any child area is clicked
+    open_projects_requested  = Signal()             # empty-state "Open Project" button
 
     def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
         super().__init__(parent)
@@ -80,6 +158,8 @@ class TerminalPanel(QWidget):
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
         _tm.theme_changed.connect(self.apply_theme)
+        # Show empty state initially (positioned after first paint via QTimer)
+        QTimer.singleShot(0, self._show_empty_state)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -134,8 +214,8 @@ class TerminalPanel(QWidget):
         self._blocks_container = QWidget()
         self._blocks_container.setStyleSheet("QWidget { background: transparent; }")
         self._blocks_layout = QVBoxLayout(self._blocks_container)
-        self._blocks_layout.setContentsMargins(16, 8, 16, 8)
-        self._blocks_layout.setSpacing(6)
+        self._blocks_layout.setContentsMargins(16, 12, 16, 8)
+        self._blocks_layout.setSpacing(8)
         self._blocks_layout.addStretch()
 
         self._scroll.setWidget(self._blocks_container)
@@ -143,6 +223,11 @@ class TerminalPanel(QWidget):
             lambda _min, maximum: self._scroll.verticalScrollBar().setValue(maximum)
         )
         layout.addWidget(self._scroll)
+
+        self._empty_state = _EmptyState(self)
+        self._empty_state.set_run_callback(self._on_command)
+        self._empty_state.open_project.connect(self.open_projects_requested)
+        self._empty_state.raise_()
 
         self._sep = QFrame()
         self._sep.setFrameShape(QFrame.HLine)
@@ -153,7 +238,9 @@ class TerminalPanel(QWidget):
 
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
+        layout.addSpacing(8)
         layout.addWidget(self._input_bar)
+        layout.addSpacing(6)
 
         # Popup is a child of this panel — overlaps siblings, no top-level issues
         self._completion_popup = CompletionPopup(self)
@@ -214,6 +301,7 @@ class TerminalPanel(QWidget):
             block_widget.favorite_requested.connect(self.favorite_requested)
             block_widget.fix_requested.connect(self._on_fix_requested)
             self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, block_widget)
+            self._empty_state.setVisible(False)
 
             thread = CommandThread(command, self._session.cwd, self._session.env)
             self._running_thread = thread
@@ -314,6 +402,8 @@ class TerminalPanel(QWidget):
             self._pty_widget.setGeometry(self.rect())
         if self._ai_panel and self._ai_panel.isVisible():
             self._ai_panel.setGeometry(self.rect())
+        if self._empty_state and self._empty_state.isVisible():
+            self._empty_state.setGeometry(self._scroll.geometry())
 
     def _on_pty_finished(self, exit_code: int, final_text: str) -> None:
         if self._pty_widget:
@@ -536,12 +626,20 @@ class TerminalPanel(QWidget):
         widget.favorite_requested.connect(self.favorite_requested)
         widget.fix_requested.connect(self._on_fix_requested)
         self._blocks_layout.insertWidget(self._blocks_layout.count() - 1, widget)
+        self._empty_state.setVisible(False)
 
     def _remove_block(self, widget: QWidget) -> None:
         self._blocks_layout.removeWidget(widget)
         widget.deleteLater()
         if self._search_bar.isVisible():
             self._on_search(self._search_bar.query())
+        if self._blocks_layout.count() == 1:  # only the stretch remains
+            self._show_empty_state()
+
+    def _show_empty_state(self) -> None:
+        self._empty_state.setGeometry(self._scroll.geometry())
+        self._empty_state.raise_()
+        self._empty_state.setVisible(True)
 
     def apply_theme(self, p: Palette) -> None:
         self._scroll.setStyleSheet(
@@ -551,6 +649,7 @@ class TerminalPanel(QWidget):
         self._sep.setStyleSheet(
             f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
         )
+        self._empty_state.apply_theme(p)
 
     def toggle_collapse_all(self) -> None:
         blocks = self._all_blocks()
@@ -564,6 +663,7 @@ class TerminalPanel(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         self._match_blocks.clear()
+        self._show_empty_state()
 
     def _all_blocks(self) -> list[CommandBlock]:
         blocks = []

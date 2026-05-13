@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QScrollArea, QWidget
 from PySide6.QtCore import Signal, Qt
 
-from .theme import Palette, ThemeManager
+from .theme import Palette, ThemeManager, get_mono_font, TY
 
 
 class CompletionPopup(QFrame):
@@ -63,14 +63,14 @@ class CompletionPopup(QFrame):
         for text, is_dir in items:
             new_items.append(text)
             btn = QPushButton(text)
-            btn.setFixedHeight(26)
+            btn.setFixedHeight(28)
             btn.setStyleSheet(self._btn_style(p, is_dir, active=False))
             btn.clicked.connect(lambda checked, t=text: self.item_activated.emit(t))
             new_layout.addWidget(btn)
             new_buttons.append(btn)
 
         vp_w = self._scroll.viewport().width()
-        new_list.resize(vp_w if vp_w > 0 else 200, max(1, len(items)) * 27)
+        new_list.resize(vp_w if vp_w > 0 else 200, max(1, len(items)) * 29)
 
         self._scroll.setWidget(new_list)   # Qt deletes the old list widget
         self._list = new_list
@@ -79,7 +79,7 @@ class CompletionPopup(QFrame):
         self._items = new_items
         self._selected = -1
 
-        row_h = 26
+        row_h = 28
         self.setFixedHeight(min(200, len(items) * row_h + 8))
 
         if self._buttons:
@@ -115,6 +115,6 @@ class CompletionPopup(QFrame):
         bg = p.bg_selected if active else "transparent"
         return (
             f"QPushButton {{ background: {bg}; color: {color}; border: none;"
-            f" font-family: Monospace; font-size: 9pt; text-align: left; padding: 0 10px; }}"
+            f" font-family: {get_mono_font()}; font-size: {TY.sm}px; text-align: left; padding: 0 10px; }}"
             f"QPushButton:hover {{ background: {p.bg_hover2}; }}"
         )

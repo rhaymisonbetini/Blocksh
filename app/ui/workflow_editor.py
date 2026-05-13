@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ..domain.workflow import Workflow, WorkflowStep
-from .theme import ThemeManager
+from .theme import ThemeManager, TY
 
 
 class _StepRow(QWidget):
@@ -23,9 +23,10 @@ class _StepRow(QWidget):
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(6)
 
+        p = ThemeManager.instance().current
         num = QLabel(f"{index + 1}.")
         num.setFixedWidth(20)
-        num.setStyleSheet("color: #6c7086; font-size: 9pt; background: transparent;")
+        num.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent;")
         layout.addWidget(num)
 
         self._cmd_edit = QLineEdit(self._step.command_template)
@@ -33,7 +34,7 @@ class _StepRow(QWidget):
         layout.addWidget(self._cmd_edit, 1)
 
         err_lbl = QLabel("on error:")
-        err_lbl.setStyleSheet("color: #6c7086; font-size: 8pt; background: transparent;")
+        err_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.xs}px; background: transparent;")
         layout.addWidget(err_lbl)
 
         self._on_error = QComboBox()
@@ -104,7 +105,7 @@ class WorkflowEditor(QDialog):
 
         steps_header = QHBoxLayout()
         steps_lbl = QLabel("Steps")
-        steps_lbl.setStyleSheet("font-size: 10pt; font-weight: bold; background: transparent;")
+        steps_lbl.setStyleSheet(f"font-size: {TY.mono_sm}px; font-weight: bold; background: transparent;")
         steps_header.addWidget(steps_lbl)
         steps_header.addStretch()
         add_btn = QPushButton("+ Add Step")
@@ -127,8 +128,9 @@ class WorkflowEditor(QDialog):
         self._steps_scroll.setWidget(self._steps_container)
         layout.addWidget(self._steps_scroll, 1)
 
+        _p = ThemeManager.instance().current
         self._error_lbl = QLabel()
-        self._error_lbl.setStyleSheet("color: #f38ba8; font-size: 8pt;")
+        self._error_lbl.setStyleSheet(f"color: {_p.red}; font-size: {TY.sm}px;")
         self._error_lbl.hide()
         layout.addWidget(self._error_lbl)
 

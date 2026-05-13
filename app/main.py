@@ -1,7 +1,9 @@
 import sys
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFontDatabase, QFont
 from .ui.main_window import MainWindow
-from .ui.theme import Palette, ThemeManager
+from .ui.theme import Palette, ThemeManager, TY, FONT_FAMILY
 from .core.command_executor import SubprocessExecutor
 from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
@@ -32,13 +34,14 @@ def _build_global_qss(p: Palette) -> str:
         }}
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical {{ height: 0; }}
-        QLabel       {{ color: {p.fg}; background: transparent; }}
+        QLabel       {{ color: {p.fg}; background: transparent; font-family: '{FONT_FAMILY}'; }}
+        QPushButton  {{ font-family: '{FONT_FAMILY}'; }}
         QPlainTextEdit {{
             background: transparent;
             color: {p.fg};
             border: none;
-            font-family: Monospace;
-            font-size: 9pt;
+            font-family: '{FONT_FAMILY}';
+            font-size: {TY.mono_base}px;
         }}
         QMenu {{
             background: {p.bg_overlay};
@@ -50,9 +53,20 @@ def _build_global_qss(p: Palette) -> str:
     """
 
 
+def _load_fonts() -> None:
+    fonts_dir = Path(__file__).parent / "assets" / "fonts"
+    for ttf in fonts_dir.glob("*.ttf"):
+        QFontDatabase.addApplicationFont(str(ttf))
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    _load_fonts()
+    ui_font = QFont(FONT_FAMILY, TY.base)
+    ui_font.setWeight(QFont.Weight.Normal)
+    app.setFont(ui_font)
 
     ThemeManager.instance()   # init singleton, loads persisted preference
 

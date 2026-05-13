@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ..domain.favorite import Favorite
-from .theme import ThemeManager
+from .theme import ThemeManager, TY
 
 
 class FavoriteEditDialog(QDialog):
@@ -47,7 +47,8 @@ class FavoriteEditDialog(QDialog):
         layout.addLayout(form)
 
         self._error_lbl = QLabel()
-        self._error_lbl.setStyleSheet("color: #f38ba8; font-size: 8pt;")
+        p = ThemeManager.instance().current
+        self._error_lbl.setStyleSheet(f"color: {p.red}; font-size: {TY.sm}px;")
         self._error_lbl.hide()
         layout.addWidget(self._error_lbl)
 
