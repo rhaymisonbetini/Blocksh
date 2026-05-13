@@ -38,17 +38,17 @@ class _ResultItem(QWidget):
 
         icon_lbl = QLabel(source_icon)
         icon_lbl.setFixedWidth(18)
-        icon_lbl.setStyleSheet(f"font-size: {TY.mono_sm}pt; background: transparent;")
+        icon_lbl.setStyleSheet(f"font-size: {TY.mono_sm}px; background: transparent;")
         top_row.addWidget(icon_lbl)
 
         cmd_lbl = QLabel(text[:80] + ("…" if len(text) > 80 else ""))
         cmd_lbl.setStyleSheet(
-            f"font-family: {get_mono_font()}; font-size: {TY.sm}pt; font-weight: bold; background: transparent;"
+            f"font-family: {get_mono_font()}; font-size: {TY.sm}px; font-weight: bold; background: transparent;"
         )
         top_row.addWidget(cmd_lbl, 1)
 
         time_lbl = QLabel(time_label)
-        time_lbl.setStyleSheet(f"font-size: {TY.xs}pt; background: transparent;")
+        time_lbl.setStyleSheet(f"font-size: {TY.xs}px; background: transparent;")
         top_row.addWidget(time_lbl)
 
         layout.addLayout(top_row)
@@ -56,7 +56,7 @@ class _ResultItem(QWidget):
         if cwd:
             cwd_lbl = QLabel(cwd)
             cwd_lbl.setStyleSheet(
-                f"font-size: {TY.xs}pt; padding-left: 24px; background: transparent;"
+                f"font-size: {TY.xs}px; padding-left: 24px; background: transparent;"
             )
             layout.addWidget(cwd_lbl)
         else:
@@ -112,7 +112,7 @@ class CommandPalette(QWidget):
         input_layout.setSpacing(8)
 
         search_icon = QLabel("⌕")
-        search_icon.setStyleSheet(f"font-size: {TY.xl}pt; background: transparent;")
+        search_icon.setStyleSheet(f"font-size: {TY.xl}px; background: transparent;")
         search_icon.setFixedWidth(22)
         input_layout.addWidget(search_icon)
 
@@ -140,7 +140,7 @@ class CommandPalette(QWidget):
         hint = QLabel("Enter — insert   Ctrl+Enter — insert & run   Esc — close")
         hint.setAlignment(Qt.AlignCenter)
         hint.setObjectName("palette_hint")
-        hint.setStyleSheet(f"font-size: {TY.xs}pt; padding: 4px;")
+        hint.setStyleSheet(f"font-size: {TY.xs}px; padding: 4px;")
         card_layout.addWidget(hint)
 
         outer.addWidget(self._card)
@@ -285,7 +285,7 @@ class CommandPalette(QWidget):
             f"QLineEdit {{"
             f"  background: {p.bg_overlay}; color: {p.fg}; border: none;"
             f"  border-radius: 6px; padding: 8px 14px;"
-            f"  font-size: {TY.base}pt; font-family: {get_mono_font()};"
+            f"  font-size: {TY.base}px; font-family: {get_mono_font()};"
             f"}}"
             f"QLineEdit:focus {{"
             f"  border: 1px solid {p.border_focus};"
@@ -300,5 +300,5 @@ class CommandPalette(QWidget):
         for lbl in self.findChildren(QLabel):
             if "cwd" in (lbl.styleSheet()):
                 lbl.setStyleSheet(
-                    f"font-size: {TY.xs}pt; padding-left: 24px; background: transparent; color: {p.fg_muted};"
+                    f"font-size: {TY.xs}px; padding-left: 24px; background: transparent; color: {p.fg_muted};"
                 )

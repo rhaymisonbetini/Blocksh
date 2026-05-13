@@ -115,6 +115,6 @@ class CompletionPopup(QFrame):
         bg = p.bg_selected if active else "transparent"
         return (
             f"QPushButton {{ background: {bg}; color: {color}; border: none;"
-            f" font-family: {get_mono_font()}; font-size: {TY.sm}pt; text-align: left; padding: 0 10px; }}"
+            f" font-family: {get_mono_font()}; font-size: {TY.sm}px; text-align: left; padding: 0 10px; }}"
             f"QPushButton:hover {{ background: {p.bg_hover2}; }}"
         )

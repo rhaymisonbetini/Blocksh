@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFontDatabase, QFont
 from .ui.main_window import MainWindow
-from .ui.theme import Palette, ThemeManager
+from .ui.theme import Palette, ThemeManager, TY, FONT_FAMILY
 from .core.command_executor import SubprocessExecutor
 from .infra.storage.database import get_connection, initialize_schema
 from .infra.storage.history_repository import HistoryRepository
@@ -34,14 +34,14 @@ def _build_global_qss(p: Palette) -> str:
         }}
         QScrollBar::add-line:vertical,
         QScrollBar::sub-line:vertical {{ height: 0; }}
-        QLabel       {{ color: {p.fg}; background: transparent; font-family: 'Dongle'; }}
-        QPushButton  {{ font-family: 'Dongle'; }}
+        QLabel       {{ color: {p.fg}; background: transparent; font-family: '{FONT_FAMILY}'; }}
+        QPushButton  {{ font-family: '{FONT_FAMILY}'; }}
         QPlainTextEdit {{
             background: transparent;
             color: {p.fg};
             border: none;
-            font-family: Monospace;
-            font-size: 13pt;
+            font-family: '{FONT_FAMILY}';
+            font-size: {TY.mono_base}px;
         }}
         QMenu {{
             background: {p.bg_overlay};
@@ -64,7 +64,7 @@ def main():
     app.setStyle("Fusion")
 
     _load_fonts()
-    ui_font = QFont("Dongle", 11)
+    ui_font = QFont(FONT_FAMILY, TY.base)
     ui_font.setWeight(QFont.Weight.Normal)
     app.setFont(ui_font)
 

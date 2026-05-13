@@ -64,7 +64,7 @@ class _Tab(QWidget):
         self._lbl = QLabel(title)
         self._lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._lbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-size: {TY.lg}pt; background: transparent; border: none;"
+            f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent; border: none;"
         )
 
         self._env_tag = QLabel("● Local")
@@ -72,13 +72,13 @@ class _Tab(QWidget):
         self._env_tag.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._env_tag.setStyleSheet(
             f"color: {p.tag_local_fg}; background: {p.tag_local_bg};"
-            f" border-radius: 8px; padding: 1px 6px; font-size: {TY.base}pt;"
+            f" border-radius: 8px; padding: 1px 6px; font-size: {TY.xs}px;"
         )
 
         self._close_btn = QPushButton("×")
         self._close_btn.setFixedSize(18, 18)
         self._close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.red_ui}; }}"
         )
         self._close_btn.clicked.connect(self.close_clicked)
@@ -103,16 +103,16 @@ class _Tab(QWidget):
     def apply_theme(self, p: Palette) -> None:
         color = p.fg if self._active else p.fg_muted
         self._lbl.setStyleSheet(
-            f"color: {color}; font-size: {TY.lg}pt; background: transparent; border: none;"
+            f"color: {color}; font-size: {TY.sm}px; background: transparent; border: none;"
         )
         self._close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.sm}px; }}"
             f"QPushButton:hover {{ color: {p.red_ui}; }}"
         )
         if self._env_tag:
             self._env_tag.setStyleSheet(
                 f"color: {p.tag_local_fg}; background: {p.tag_local_bg};"
-                f" border-radius: 8px; padding: 1px 6px; font-size: {TY.base}pt;"
+                f" border-radius: 8px; padding: 1px 6px; font-size: {TY.xs}px;"
             )
         self._update_style()
 
@@ -225,7 +225,7 @@ class TabBar(QWidget):
             p = ThemeManager.instance().current
             self._avatar_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 14px; font-weight: bold; font-size: {TY.base}pt; }}"
+                f" border-radius: 14px; font-weight: bold; font-size: {TY.base}px; }}"
                 f"QPushButton:hover {{ background: {p.cyan}; }}"
             )
 
@@ -234,7 +234,7 @@ class TabBar(QWidget):
         self._sep.setStyleSheet(f"background: {p.border}; color: {p.border};")
         action_style = (
             f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg_muted}; border: none;"
-            f" border-radius: 6px; font-size: {TY.lg}pt; padding: 0 10px; }}"
+            f" border-radius: 6px; font-size: {TY.sm}px; padding: 0 10px; }}"
             f"QPushButton:hover {{ background: {p.bg_hover2}; color: {p.fg}; }}"
         )
         self._add_btn.setStyleSheet(action_style)

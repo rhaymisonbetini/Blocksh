@@ -32,7 +32,7 @@ class _PaneWrapper(QWidget):
 
         self._title_lbl = QLabel("Terminal")
         self._title_lbl.setStyleSheet(
-            f"font-size: {TY.sm}pt; background: transparent;"
+            f"font-size: {TY.sm}px; background: transparent;"
         )
         h_layout.addWidget(self._title_lbl, 1)
 
@@ -78,11 +78,11 @@ class _PaneWrapper(QWidget):
         )
         self._title_lbl.setStyleSheet(
             f"color: {p.fg_muted if not active else p.fg};"
-            f" font-size: {TY.sm}pt; background: transparent;"
+            f" font-size: {TY.sm}px; background: transparent;"
         )
         self._close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: none; border-radius: 3px; font-size: {TY.base}pt; }}"
+            f" border: none; border-radius: 3px; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ background: {p.red}; color: {p.bg}; }}"
         )
         # Draw a left border on the active pane

@@ -27,7 +27,7 @@ class SearchBar(QWidget):
         layout.setSpacing(8)
 
         self._icon = QLabel("⌕")
-        self._icon.setStyleSheet(f"color: #6c7086; font-size: {TY.lg}pt; background: transparent;")
+        self._icon.setStyleSheet(f"color: #6c7086; font-size: {TY.lg}px; background: transparent;")
 
         self._input = QLineEdit()
         self._input.setPlaceholderText("Search blocks...")
@@ -57,22 +57,22 @@ class SearchBar(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
-        self._icon.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.lg}pt; background: transparent;")
+        self._icon.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.lg}px; background: transparent;")
         self._input.setStyleSheet(
             f"QLineEdit {{ background: {p.bg_overlay}; color: {p.fg}; border: none;"
-            f" border-radius: 4px; padding: 4px 10px; font-size: {TY.sm}pt; }}"
+            f" border-radius: 4px; padding: 4px 10px; font-size: {TY.sm}px; }}"
             f"QLineEdit:focus {{ border: 1px solid {p.blue}; }}"
         )
-        self._counter.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.xs}pt; background: transparent;")
+        self._counter.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.xs}px; background: transparent;")
         nav_style = (
             f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg_muted}; border: none;"
-            f" border-radius: 4px; font-size: {TY.mono_sm}pt; }}"
+            f" border-radius: 4px; font-size: {TY.mono_sm}px; }}"
             f"QPushButton:hover {{ background: {p.bg_hover2}; color: {p.fg}; }}"
         )
         self._prev_btn.setStyleSheet(nav_style)
         self._next_btn.setStyleSheet(nav_style)
         self._close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}px; }}"
             f"QPushButton:hover {{ color: {p.red_ui}; }}"
         )
 
@@ -82,13 +82,13 @@ class SearchBar(QWidget):
             self._counter.setText("0 results")
             self._counter.setStyleSheet(
                 f"color: {p.bg}; background: {p.red};"
-                f" border-radius: 10px; padding: 2px 8px; font-size: {TY.xs}pt;"
+                f" border-radius: 10px; padding: 2px 8px; font-size: {TY.xs}px;"
             )
         else:
             self._counter.setText(f"{current + 1} of {count}")
             self._counter.setStyleSheet(
                 f"color: {p.bg}; background: {p.green};"
-                f" border-radius: 10px; padding: 2px 8px; font-size: {TY.xs}pt;"
+                f" border-radius: 10px; padding: 2px 8px; font-size: {TY.xs}px;"
             )
 
     def query(self) -> str:

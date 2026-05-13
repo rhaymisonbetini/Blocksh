@@ -175,7 +175,7 @@ class InputBar(QWidget):
         )
         self._input.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
-            f" font-family: {mono}; font-size: {TY.base}pt; }}"
+            f" font-family: {mono}; font-size: {TY.base}px; }}"
         )
         self._apply_ai_mode_style(p, ai_mode)
 
@@ -364,13 +364,13 @@ class InputBar(QWidget):
         if ai_mode:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 5px; font-size: {TY.xl}pt; font-weight: bold; }}"
+                f" border-radius: 5px; font-size: {TY.xl}px; font-weight: bold; }}"
                 f"QPushButton:hover {{ background: {p.blue}; opacity: 0.85; }}"
             )
             self._run_btn.setText("Ask AI →")
             self._run_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}pt;"
+                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}px;"
                 f" padding: 0 18px; }}"
                 f"QPushButton:hover {{ background: #74b0e8; }}"
                 f"QPushButton:pressed {{ background: #5a9fd4; }}"
@@ -378,13 +378,13 @@ class InputBar(QWidget):
         else:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
-                f" border-radius: 5px; font-size: {TY.xl}pt; }}"
+                f" border-radius: 5px; font-size: {TY.xl}px; }}"
                 f"QPushButton:hover {{ color: {p.blue}; }}"
             )
             self._run_btn.setText("▶  Run")
             self._run_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.accent}; color: {p.accent_fg}; border: none;"
-                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}pt;"
+                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}px;"
                 f" padding: 0 18px; }}"
                 f"QPushButton:hover {{ background: {p.accent_hover}; }}"
                 f"QPushButton:pressed {{ background: {p.accent_hover}; }}"

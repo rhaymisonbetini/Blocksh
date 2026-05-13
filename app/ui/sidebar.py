@@ -69,11 +69,11 @@ class _NavButton(QPushButton):
 
         self._icon_lbl = QLabel(icon)
         self._icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._icon_lbl.setStyleSheet(f"font-size: {TY.xl}pt; background: transparent; border: none;")
+        self._icon_lbl.setStyleSheet(f"font-size: {TY.md}px; background: transparent; border: none;")
 
         self._text_lbl = QLabel(label)
         self._text_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._text_lbl.setStyleSheet(f"font-size: {TY.xl}pt; background: transparent; border: none;")
+        self._text_lbl.setStyleSheet(f"font-size: {TY.base}px; background: transparent; border: none;")
 
         layout.addWidget(self._icon_lbl)
         layout.addWidget(self._text_lbl)
@@ -94,6 +94,8 @@ class _NavButton(QPushButton):
             self.setToolTip("")
 
     def apply_theme(self, p: Palette) -> None:
+        self._icon_lbl.setStyleSheet(f"font-size: {TY.md}px; background: transparent; border: none;")
+        self._text_lbl.setStyleSheet(f"font-size: {TY.base}px; background: transparent; border: none;")
         self.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -184,7 +186,7 @@ class Sidebar(QWidget):
         self._logo = QLabel(f'<b style="color:{p0.blue}">&gt;_</b> Blocksh')
         self._logo.setTextFormat(Qt.RichText)
         self._logo.setStyleSheet(
-            f"color: {p0.fg}; font-size: {TY.xl}pt;"
+            f"color: {p0.fg}; font-size: {TY.md}px;"
             " font-weight: bold; padding: 4px 8px 4px 8px;"
             " background: transparent;"
         )
@@ -327,7 +329,7 @@ class Sidebar(QWidget):
         self._favs_back_btn = QPushButton("←")
         self._favs_back_btn.setFixedSize(24, 24)
         self._favs_back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._favs_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
@@ -335,7 +337,7 @@ class Sidebar(QWidget):
 
         self._favs_title_lbl = QLabel("Favorites")
         self._favs_title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         title_lbl = self._favs_title_lbl
 
@@ -343,7 +345,7 @@ class Sidebar(QWidget):
         self._favs_add_btn.setFixedSize(22, 22)
         self._favs_add_btn.setToolTip("Add favorite")
         self._favs_add_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._favs_add_btn.clicked.connect(self._open_add_favorite)
@@ -393,7 +395,7 @@ class Sidebar(QWidget):
         self._proj_back_btn = QPushButton("←")
         self._proj_back_btn.setFixedSize(24, 24)
         self._proj_back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._proj_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
@@ -401,7 +403,7 @@ class Sidebar(QWidget):
 
         self._proj_title_lbl = QLabel("Projects")
         self._proj_title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         title_lbl = self._proj_title_lbl
 
@@ -409,7 +411,7 @@ class Sidebar(QWidget):
         self._proj_add_btn.setFixedSize(22, 22)
         self._proj_add_btn.setToolTip("Add current directory")
         self._proj_add_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._proj_add_btn.clicked.connect(self.project_add_requested)
@@ -460,7 +462,7 @@ class Sidebar(QWidget):
         self._ssh_back_btn = QPushButton("←")
         self._ssh_back_btn.setFixedSize(24, 24)
         self._ssh_back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._ssh_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
@@ -468,7 +470,7 @@ class Sidebar(QWidget):
 
         self._ssh_title_lbl = QLabel("SSH")
         self._ssh_title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         title_lbl = self._ssh_title_lbl
 
@@ -476,7 +478,7 @@ class Sidebar(QWidget):
         self._ssh_add_btn.setFixedSize(22, 22)
         self._ssh_add_btn.setToolTip("Add SSH connection")
         self._ssh_add_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._ssh_add_btn.clicked.connect(self.ssh_add_requested)
@@ -525,7 +527,7 @@ class Sidebar(QWidget):
         self._wf_back_btn = QPushButton("←")
         self._wf_back_btn.setFixedSize(24, 24)
         self._wf_back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._wf_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
@@ -533,7 +535,7 @@ class Sidebar(QWidget):
 
         self._wf_title_lbl = QLabel("Workflows")
         self._wf_title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         title_lbl = self._wf_title_lbl
 
@@ -541,7 +543,7 @@ class Sidebar(QWidget):
         self._wf_add_btn.setFixedSize(22, 22)
         self._wf_add_btn.setToolTip("New workflow")
         self._wf_add_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._wf_add_btn.clicked.connect(self.workflow_add_requested)
@@ -593,14 +595,14 @@ class Sidebar(QWidget):
         logo_lbl.setTextFormat(Qt.RichText)
         logo_lbl.setAlignment(Qt.AlignCenter)
         logo_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         layout.addWidget(logo_lbl)
 
         version_lbl = QLabel("v0.9.0")
         version_lbl.setAlignment(Qt.AlignCenter)
         version_lbl.setStyleSheet(
-            f"color: {p.accent}; font-size: {TY.md}pt; background: transparent;"
+            f"color: {p.accent}; font-size: {TY.md}px; background: transparent;"
         )
         layout.addWidget(version_lbl)
 
@@ -611,7 +613,7 @@ class Sidebar(QWidget):
         desc_lbl.setWordWrap(True)
         desc_lbl.setAlignment(Qt.AlignCenter)
         desc_lbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-size: {TY.base}pt; background: transparent;"
+            f"color: {p.fg_muted}; font-size: {TY.base}px; background: transparent;"
         )
         layout.addWidget(desc_lbl)
 
@@ -632,9 +634,9 @@ class Sidebar(QWidget):
             rl.setContentsMargins(4, 0, 4, 0)
             rl.setSpacing(6)
             k = QLabel(label)
-            k.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent;")
+            k.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
             v = QLabel(value)
-            v.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.base}pt; background: transparent;")
+            v.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.base}px; background: transparent;")
             rl.addWidget(k)
             rl.addStretch()
             rl.addWidget(v)
@@ -648,7 +650,7 @@ class Sidebar(QWidget):
         gh_btn.setFixedHeight(30)
         gh_btn.setStyleSheet(
             f"QPushButton {{ background: {p.bg_overlay}; color: {p.fg_muted};"
-            f" border: 1px solid {p.border}; border-radius: 8px; font-size: {TY.base}pt; }}"
+            f" border: 1px solid {p.border}; border-radius: 8px; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.fg}; }}"
         )
         gh_btn.clicked.connect(
@@ -659,7 +661,7 @@ class Sidebar(QWidget):
         author_lbl = QLabel("Made with ♥ by rhaymisonbetini")
         author_lbl.setAlignment(Qt.AlignCenter)
         author_lbl.setStyleSheet(
-            f"color: {p.fg_dim}; font-size: {TY.sm}pt; background: transparent;"
+            f"color: {p.fg_dim}; font-size: {TY.sm}px; background: transparent;"
         )
         layout.addWidget(author_lbl)
 
@@ -676,14 +678,14 @@ class Sidebar(QWidget):
         back_btn = QPushButton("←")
         back_btn.setFixedSize(24, 24)
         back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         back_btn.clicked.connect(back_fn)
 
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
 
         h_layout.addWidget(back_btn)
@@ -705,12 +707,12 @@ class Sidebar(QWidget):
         self._info_lbl = QLabel(f"● {_username()}")
         self._info_lbl.setWordWrap(False)
         self._info_lbl.setToolTip(_os_info())
-        self._info_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent;")
+        self._info_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent;")
         vbox.addWidget(self._info_lbl)
 
         self._cwd_label = QLabel("~")
         self._cwd_label.setWordWrap(True)
-        self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: {TY.base}pt; background: transparent;")
+        self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: {TY.xs}px; background: transparent;")
         vbox.addWidget(self._cwd_label)
 
         # Kept for backward compat — no longer displayed
@@ -727,14 +729,14 @@ class Sidebar(QWidget):
         self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
         self._logo.setText(f'<b style="color:{p.blue}">&gt;_</b> Blocksh')
         self._logo.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.xl}pt;"
+            f"color: {p.fg}; font-size: {TY.md}px;"
             f" font-weight: bold; padding: 4px 8px 4px 8px; background: transparent;"
         )
         if hasattr(self, "_collapse_btn"):
             self._collapse_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
-                f" border-radius: 4px; font-size: {TY.md}pt; }}"
-                f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
+                f"QPushButton {{ background: {p.bg_surface}; color: {p.fg_muted}; border: 1px solid {p.border};"
+                f" border-radius: 8px; font-size: {TY.sm}px; }}"
+                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.fg}; }}"
             )
         sep_style = f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
         self._nav_sep.setStyleSheet(sep_style)
@@ -745,20 +747,20 @@ class Sidebar(QWidget):
         self._ssh_sep.setStyleSheet(sep_style)
         self._wf_sep.setStyleSheet(sep_style)
         self._about_sep.setStyleSheet(sep_style)
-        self._info_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.md}pt; background: transparent;")
-        self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: {TY.base}pt; background: transparent;")
+        self._info_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent;")
+        self._cwd_label.setStyleSheet(f"color: {p.blue}; font-size: {TY.xs}px; background: transparent;")
         for btn in self._nav_buttons:
             btn.apply_theme(p)
 
         _back_style = (
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         _title_style = (
-            f"color: {p.fg}; font-size: {TY.xl}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         _add_style = (
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.xl}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         for btn in getattr(self, '_sub_back_btns', []):
@@ -917,7 +919,7 @@ class Sidebar(QWidget):
             btn.setFixedHeight(28)
             btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {color}; border: none;"
-                f" font-family: {get_mono_font()}; font-size: {TY.md}pt; text-align: left; padding: 0 8px; }}"
+                f" font-family: {get_mono_font()}; font-size: {TY.md}px; text-align: left; padding: 0 8px; }}"
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
             )
             btn.clicked.connect(lambda checked, n=theme.name: self._on_theme_clicked(n))
@@ -943,7 +945,7 @@ class Sidebar(QWidget):
             btn.setToolTip(cmd_text)
             btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {color}; border: none;"
-                f" font-family: {get_mono_font()}; font-size: {TY.base}pt; text-align: left; padding: 0 8px; }}"
+                f" font-family: {get_mono_font()}; font-size: {TY.base}px; text-align: left; padding: 0 8px; }}"
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
             )
             btn.clicked.connect(lambda checked, t=cmd_text: self.command_selected.emit(t))
@@ -961,7 +963,7 @@ class Sidebar(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setWordWrap(True)
             empty.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; padding: 16px 8px;"
+                f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent; padding: 16px 8px;"
             )
             new_layout.addWidget(empty)
         else:
@@ -985,14 +987,14 @@ class Sidebar(QWidget):
 
         name_lbl = QLabel(fav.name)
         name_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.md}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.md}px; font-weight: bold; background: transparent;"
         )
         header_h.addWidget(name_lbl, 1)
 
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, f=fav: self._show_favorite_menu(f))
@@ -1005,7 +1007,7 @@ class Sidebar(QWidget):
         cmd_btn.setToolTip(fav.command_text)
         cmd_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
-            f" font-family: {get_mono_font()}; font-size: {TY.base}pt; text-align: left; padding: 0 4px; }}"
+            f" font-family: {get_mono_font()}; font-size: {TY.base}px; text-align: left; padding: 0 4px; }}"
             f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
         )
         cmd_btn.clicked.connect(
@@ -1062,7 +1064,7 @@ class Sidebar(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setWordWrap(True)
             empty.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; padding: 16px 8px;"
+                f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent; padding: 16px 8px;"
             )
             new_layout.addWidget(empty)
         else:
@@ -1094,7 +1096,7 @@ class Sidebar(QWidget):
         toggle_btn = QPushButton("▾" if is_expanded else "▸")
         toggle_btn.setFixedSize(16, 16)
         toggle_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         h.addWidget(toggle_btn)
@@ -1104,7 +1106,7 @@ class Sidebar(QWidget):
         name_btn.setToolTip(proj.path)
         name_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
-            f" font-size: {TY.md}pt; font-weight: bold; text-align: left; padding: 0 2px; }}"
+            f" font-size: {TY.md}px; font-weight: bold; text-align: left; padding: 0 2px; }}"
             f"QPushButton:hover {{ color: {p.blue}; }}"
         )
         name_btn.clicked.connect(
@@ -1115,14 +1117,14 @@ class Sidebar(QWidget):
         type_color = _TYPE_COLORS.get(proj.type, p.fg_muted)
         type_lbl = QLabel(proj.type)
         type_lbl.setStyleSheet(
-            f"color: {type_color}; font-size: {TY.sm}pt; background: transparent; padding: 1px 4px;"
+            f"color: {type_color}; font-size: {TY.sm}px; background: transparent; padding: 1px 4px;"
         )
         h.addWidget(type_lbl)
 
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, pr=proj: self._show_project_menu(pr))
@@ -1135,7 +1137,7 @@ class Sidebar(QWidget):
         display_path = "~" + proj.path[len(home):] if proj.path.startswith(home) else proj.path
         path_lbl = QLabel(display_path)
         path_lbl.setStyleSheet(
-            f"color: {p.fg_dim}; font-family: {get_mono_font()}; font-size: {TY.sm}pt;"
+            f"color: {p.fg_dim}; font-family: {get_mono_font()}; font-size: {TY.sm}px;"
             f" background: transparent; padding: 0 26px 2px 26px;"
         )
         path_lbl.setWordWrap(True)
@@ -1155,7 +1157,7 @@ class Sidebar(QWidget):
             color = p.fg_muted if block.exit_code == 0 else p.red
             cmd_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {color}; border: none;"
-                f" font-family: {get_mono_font()}; font-size: {TY.base}pt; text-align: left; padding: 0 4px; }}"
+                f" font-family: {get_mono_font()}; font-size: {TY.base}px; text-align: left; padding: 0 4px; }}"
                 f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
             )
             cmd_btn.clicked.connect(
@@ -1165,7 +1167,7 @@ class Sidebar(QWidget):
 
         if not history:
             no_hist = QLabel("No commands yet")
-            no_hist.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; padding: 0 4px;")
+            no_hist.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent; padding: 0 4px;")
             hist_layout.addWidget(no_hist)
 
         hist_widget.setVisible(is_expanded)
@@ -1222,7 +1224,7 @@ class Sidebar(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setWordWrap(True)
             empty.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; padding: 16px 8px;"
+                f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent; padding: 16px 8px;"
             )
             new_layout.addWidget(empty)
         else:
@@ -1234,7 +1236,7 @@ class Sidebar(QWidget):
                 if group_name:
                     grp_lbl = QLabel(group_name)
                     grp_lbl.setStyleSheet(
-                        f"color: {p.fg_muted}; font-size: {TY.base}pt; font-weight: bold;"
+                        f"color: {p.fg_muted}; font-size: {TY.base}px; font-weight: bold;"
                         f" background: transparent; padding: 4px 4px 2px 4px;"
                     )
                     new_layout.addWidget(grp_lbl)
@@ -1261,7 +1263,7 @@ class Sidebar(QWidget):
         name_btn.setToolTip(conn.to_command())
         name_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
-            f" font-size: {TY.md}pt; font-weight: bold; text-align: left; padding: 0 4px; }}"
+            f" font-size: {TY.md}px; font-weight: bold; text-align: left; padding: 0 4px; }}"
             f"QPushButton:hover {{ color: {p.blue}; }}"
         )
         name_btn.clicked.connect(
@@ -1272,7 +1274,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, c=conn: self._show_ssh_menu(c))
@@ -1282,7 +1284,7 @@ class Sidebar(QWidget):
 
         host_lbl = QLabel(f"{conn.user}@{conn.host}:{conn.port}")
         host_lbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-family: {get_mono_font()}; font-size: {TY.base}pt;"
+            f"color: {p.fg_muted}; font-family: {get_mono_font()}; font-size: {TY.base}px;"
             f" background: transparent; padding: 0 4px;"
         )
         layout.addWidget(host_lbl)
@@ -1301,7 +1303,7 @@ class Sidebar(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setWordWrap(True)
             empty.setStyleSheet(
-                f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent; padding: 16px 8px;"
+                f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent; padding: 16px 8px;"
             )
             new_layout.addWidget(empty)
         else:
@@ -1328,7 +1330,7 @@ class Sidebar(QWidget):
         name_btn.setToolTip(wf.description or wf.name)
         name_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg}; border: none;"
-            f" font-size: {TY.md}pt; font-weight: bold; text-align: left; padding: 0 4px; }}"
+            f" font-size: {TY.md}px; font-weight: bold; text-align: left; padding: 0 4px; }}"
             f"QPushButton:hover {{ color: {p.green}; }}"
         )
         name_btn.clicked.connect(
@@ -1339,7 +1341,7 @@ class Sidebar(QWidget):
         menu_btn = QPushButton("⋮")
         menu_btn.setFixedSize(20, 20)
         menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg}; border: none; font-size: {TY.base}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; background: {p.bg_overlay}; border-radius: 4px; }}"
         )
         menu_btn.clicked.connect(lambda checked, w=wf: self._show_workflow_menu(w))
@@ -1349,7 +1351,7 @@ class Sidebar(QWidget):
 
         steps_lbl = QLabel(f"{len(wf.steps)} step{'s' if len(wf.steps) != 1 else ''}")
         steps_lbl.setStyleSheet(
-            f"color: {p.fg_muted}; font-size: {TY.base}pt; background: transparent; padding: 0 4px;"
+            f"color: {p.fg_muted}; font-size: {TY.base}px; background: transparent; padding: 0 4px;"
         )
         layout.addWidget(steps_lbl)
 

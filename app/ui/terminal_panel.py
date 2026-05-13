@@ -105,18 +105,18 @@ class _EmptyState(QWidget):
 
     def apply_theme(self, p) -> None:
         self._icon.setStyleSheet(
-            f"font-size: 64pt; color: {p.fg_dim}; background: transparent;"
+            f"font-size: 48px; color: {p.fg_dim}; background: transparent;"
         )
         self._heading.setStyleSheet(
-            f"font-size: {TY.xl}pt; color: {p.fg}; background: transparent;"
+            f"font-size: {TY.xl}px; color: {p.fg}; background: transparent;"
         )
         self._subtitle.setStyleSheet(
-            f"font-size: {TY.sm}pt; color: {p.fg_muted}; background: transparent;"
+            f"font-size: {TY.sm}px; color: {p.fg_muted}; background: transparent;"
         )
         ghost_style = (
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
             f" border: 1px solid {p.border}; border-radius: 8px;"
-            f" font-size: {TY.base}pt; padding: 0 12px; }}"
+            f" font-size: {TY.base}px; padding: 0 12px; }}"
             f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
         )
         for btn, _ in self._btns:

@@ -157,14 +157,14 @@ class MainWindow(QMainWindow):
         back_btn.setFixedHeight(30)
         back_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
-            f" font-size: {TY.sm}pt; padding: 0 8px; }}"
+            f" font-size: {TY.sm}px; padding: 0 8px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         back_btn.clicked.connect(self._close_settings)
 
         title_lbl = QLabel("⚙  Settings")
         title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.base}pt; font-weight: bold; background: transparent;"
+            f"color: {p.fg}; font-size: {TY.base}px; font-weight: bold; background: transparent;"
         )
 
         h_layout.addWidget(back_btn)
@@ -285,11 +285,11 @@ class MainWindow(QMainWindow):
             )
             self._settings_back_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none;"
-                f" font-size: {TY.sm}pt; padding: 0 8px; }}"
+                f" font-size: {TY.sm}px; padding: 0 8px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
             self._settings_title_lbl.setStyleSheet(
-                f"color: {p.fg}; font-size: {TY.base}pt; font-weight: bold; background: transparent;"
+                f"color: {p.fg}; font-size: {TY.base}px; font-weight: bold; background: transparent;"
             )
 
     # ── panel actions ─────────────────────────────────────────────────────────

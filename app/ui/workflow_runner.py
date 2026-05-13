@@ -30,13 +30,13 @@ class WorkflowRunner(QDialog):
         layout.setSpacing(10)
 
         title = QLabel(self._workflow.name)
-        title.setStyleSheet(f"font-size: {TY.md}pt; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"font-size: {TY.md}px; font-weight: bold; background: transparent;")
         layout.addWidget(title)
 
         if self._workflow.description:
             desc = QLabel(self._workflow.description)
             desc.setWordWrap(True)
-            desc.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}pt; background: transparent;")
+            desc.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent;")
             layout.addWidget(desc)
 
         sep = QFrame()
@@ -62,12 +62,12 @@ class WorkflowRunner(QDialog):
 
             num_lbl = QLabel(f"{i + 1}.")
             num_lbl.setFixedWidth(20)
-            num_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}pt; background: transparent;")
+            num_lbl.setStyleSheet(f"color: {p.fg_muted}; font-size: {TY.sm}px; background: transparent;")
             h.addWidget(num_lbl)
 
             cmd_lbl = QLabel(step.command_template)
             cmd_lbl.setStyleSheet(
-                f"color: {p.fg}; font-family: {get_mono_font()}; font-size: {TY.sm}pt; background: transparent;"
+                f"color: {p.fg}; font-family: {get_mono_font()}; font-size: {TY.sm}px; background: transparent;"
             )
             cmd_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
             h.addWidget(cmd_lbl, 1)
@@ -75,7 +75,7 @@ class WorkflowRunner(QDialog):
             if step.on_error == "continue":
                 tag = QLabel("continue on err")
                 tag.setStyleSheet(
-                    f"color: {p.status_warn}; font-size: {TY.xs}pt; background: transparent; padding: 1px 4px;"
+                    f"color: {p.status_warn}; font-size: {TY.xs}px; background: transparent; padding: 1px 4px;"
                 )
                 h.addWidget(tag)
 

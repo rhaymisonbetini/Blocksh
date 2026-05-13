@@ -151,7 +151,7 @@ def _best_mono_font() -> str:
     try:
         from PySide6.QtGui import QFontDatabase
         available = set(QFontDatabase.families())
-        for preferred in ["JetBrains Mono", "Fira Code", "Cascadia Code", "Monospace"]:
+        for preferred in ["Ubuntu Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", "Monospace"]:
             if preferred in available:
                 return preferred
     except Exception:
@@ -170,20 +170,45 @@ def get_mono_font() -> str:
     return _MONO_FONT
 
 
+FONT_FAMILY = "Ubuntu Mono"
+
+
 @dataclass(frozen=True)
 class Typography:
-    xs:        int = 8    # micro: type badges, file extensions, pane header titles
-    sm:        int = 9    # secondary: timestamps, sub-labels, muted metadata
-    base:      int = 11   # default: nav items, descriptions, checkboxes, helper text
-    md:        int = 12   # body: section field labels, input placeholders
-    lg:        int = 13   # primary actions: tab labels, buttons, command text
-    xl:        int = 15   # headings: nav group headers, panel titles
-    mono_sm:   int = 10   # tool call labels, small code snippets
-    mono_base: int = 11   # default output / AI response text
+    xs:        int = 10   # timestamps, badges, token names, path labels
+    sm:        int = 11   # secondary: sub-labels, muted metadata, helper text
+    base:      int = 12   # default: nav items, field labels, descriptions
+    md:        int = 13   # body: section titles, buttons, input text
+    lg:        int = 15   # headings: panel headings, tab labels
+    xl:        int = 18   # large: page titles, settings headers
+    xxl:       int = 22   # hero: splash/about titles
+    mono_sm:   int = 11   # tool call labels, token values
+    mono_base: int = 12   # default output / AI response text
     mono_lg:   int = 13   # command prompt text in blocks
 
 
 TY = Typography()
+
+
+@dataclass(frozen=True)
+class Spacing:
+    xs: int = 4
+    sm: int = 8
+    md: int = 12
+    lg: int = 16
+    xl: int = 24
+
+
+@dataclass(frozen=True)
+class Radius:
+    sm: int = 6
+    md: int = 8
+    lg: int = 10
+    xl: int = 14
+
+
+SP = Spacing()
+RD = Radius()
 
 
 class ThemeManager(QObject):

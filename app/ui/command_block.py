@@ -270,32 +270,32 @@ class CommandBlock(QWidget):
             )
         if self._cwd_lbl:
             self._cwd_lbl.setStyleSheet(
-                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}pt; background: transparent;"
+                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}px; background: transparent;"
             )
         if self._prompt_lbl:
             self._prompt_lbl.setStyleSheet(
-                f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}pt;"
+                f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
                 f" font-weight: bold; background: transparent;"
             )
         if self._cmd_lbl:
             self._cmd_lbl.setStyleSheet(f"color: {p.fg}; background: transparent;")
         if self._ts_lbl:
-            self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent;")
+            self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
         if self._menu_btn:
             self._menu_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}pt; }}"
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
         if self._explain_btn:
             self._explain_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-                f" font-size: {TY.sm}pt; padding: 0 2px; }}"
+                f" font-size: {TY.sm}px; padding: 0 2px; }}"
                 f"QPushButton:hover {{ color: {p.fg}; }}"
             )
         if self._fix_btn:
             self._fix_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
-                f" border-radius: 10px; font-size: {TY.base}pt; font-weight: bold; padding: 2px 10px; }}"
+                f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
                 f"QPushButton:hover {{ background: {p.red_ui}; }}"
             )
         if self._explanation_panel:
@@ -351,7 +351,7 @@ class CommandBlock(QWidget):
         self._toggle_btn.setFixedSize(16, 16)
         self._toggle_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {toggle_color}; border: none;"
-            f" font-size: {TY.sm}pt; padding: 0; }}"
+            f" font-size: {TY.sm}px; padding: 0; }}"
             f"QPushButton:hover {{ color: {toggle_color}; }}"
         )
         self._toggle_btn.clicked.connect(self._toggle_output)
@@ -361,13 +361,13 @@ class CommandBlock(QWidget):
         if cwd_text:
             self._cwd_lbl = QLabel(cwd_text)
             self._cwd_lbl.setStyleSheet(
-                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}pt; background: transparent;"
+                f"color: {p.blue}; font-family: {mono}; font-size: {TY.mono_sm}px; background: transparent;"
             )
             layout.addWidget(self._cwd_lbl)
 
         self._prompt_lbl = QLabel("$")
         self._prompt_lbl.setStyleSheet(
-            f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}pt;"
+            f"color: {p.green}; font-family: {mono}; font-size: {TY.lg}px;"
             f" font-weight: bold; background: transparent;"
         )
         layout.addWidget(self._prompt_lbl)
@@ -382,7 +382,7 @@ class CommandBlock(QWidget):
         layout.addStretch()
 
         self._ts_lbl = QLabel(self._block.command.created_at.strftime("%H:%M:%S"))
-        self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}pt; background: transparent;")
+        self._ts_lbl.setStyleSheet(f"color: {p.fg_dim}; font-size: {TY.base}px; background: transparent;")
         layout.addWidget(self._ts_lbl)
 
         self._explain_btn = QPushButton("?")
@@ -391,7 +391,7 @@ class CommandBlock(QWidget):
         self._explain_btn.setVisible(False)
         self._explain_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.blue}; border: none;"
-            f" font-size: {TY.sm}pt; padding: 0 2px; }}"
+            f" font-size: {TY.sm}px; padding: 0 2px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._explain_btn.clicked.connect(self._on_explain_clicked)
@@ -403,7 +403,7 @@ class CommandBlock(QWidget):
         self._fix_btn.setVisible(False)
         self._fix_btn.setStyleSheet(
             f"QPushButton {{ background: {p.red}; color: {p.bg}; border: none;"
-            f" border-radius: 10px; font-size: {TY.base}pt; font-weight: bold; padding: 2px 10px; }}"
+            f" border-radius: 10px; font-size: {TY.base}px; font-weight: bold; padding: 2px 10px; }}"
             f"QPushButton:hover {{ background: {p.red_ui}; }}"
         )
         self._fix_btn.clicked.connect(self._on_fix_clicked)
@@ -413,7 +413,7 @@ class CommandBlock(QWidget):
         self._menu_btn.setFixedSize(22, 22)
         self._menu_btn.setVisible(False)
         self._menu_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}pt; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none; font-size: {TY.lg}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
         self._menu_btn.clicked.connect(self._show_menu)
@@ -511,7 +511,7 @@ class CommandBlock(QWidget):
         if self._toggle_btn:
             self._toggle_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {toggle_color}; border: none;"
-                f" font-size: {TY.sm}pt; padding: 0; }}"
+                f" font-size: {TY.sm}px; padding: 0; }}"
                 f"QPushButton:hover {{ color: {toggle_color}; }}"
             )
         self._update_card_style(p)

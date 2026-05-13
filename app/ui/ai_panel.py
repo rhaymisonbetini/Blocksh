@@ -31,7 +31,7 @@ class _ToolCallRow(QWidget):
 
         icon = QLabel(_TOOL_ICONS.get(name, "🔧"))
         icon.setFixedWidth(18)
-        icon.setStyleSheet(f"background: transparent; font-size: {TY.base}pt;")
+        icon.setStyleSheet(f"background: transparent; font-size: {TY.base}px;")
         layout.addWidget(icon)
 
         preview = args_preview[:60] + ("…" if len(args_preview) > 60 else "")
@@ -55,7 +55,7 @@ class _ToolCallRow(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QWidget {{ background: {p.bg_overlay}; border-radius: 3px; }}")
-        self._label.setStyleSheet(f"color: {p.fg_muted}; background: transparent; font-size: {TY.mono_sm}pt;")
+        self._label.setStyleSheet(f"color: {p.fg_muted}; background: transparent; font-size: {TY.mono_sm}px;")
 
 
 # ── permission / ask inline widget ────────────────────────────────────────────
@@ -74,7 +74,7 @@ class _InlinePrompt(QWidget):
 
         icon = QLabel("🤖")
         icon.setFixedWidth(22)
-        icon.setStyleSheet(f"background: transparent; font-size: {TY.md}pt;")
+        icon.setStyleSheet(f"background: transparent; font-size: {TY.md}px;")
         layout.addWidget(icon)
 
         short = question[:100] + ("…" if len(question) > 100 else "")
@@ -120,7 +120,7 @@ class _InlinePrompt(QWidget):
         self.setStyleSheet(
             f"QWidget {{ background: {p.bg_overlay}; border: 1px solid {p.border}; border-radius: 4px; }}"
         )
-        self._lbl.setStyleSheet(f"color: {p.fg}; background: transparent; font-size: {TY.mono_sm}pt;")
+        self._lbl.setStyleSheet(f"color: {p.fg}; background: transparent; font-size: {TY.mono_sm}px;")
 
 
 # ── assistant turn widget ─────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ class _UserBubble(QWidget):
     def apply_theme(self, p: Palette) -> None:
         self._lbl.setStyleSheet(
             f"background: {p.blue}; color: {p.bg}; padding: 6px 10px;"
-            f" border-radius: 6px; font-size: {TY.base}pt;"
+            f" border-radius: 6px; font-size: {TY.base}px;"
         )
 
 
@@ -337,13 +337,13 @@ class _AiInputBar(QWidget):
         )
         self._edit.setStyleSheet(
             f"QPlainTextEdit {{ background: {p.bg_surface}; color: {p.fg};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.base}pt;"
+            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.base}px;"
             f" padding: 4px 6px; }}"
             f"QPlainTextEdit:focus {{ border-color: {p.blue}; }}"
         )
         self._send.setStyleSheet(
             f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-            f" border-radius: 4px; font-size: {TY.mono_sm}pt; font-weight: bold; }}"
+            f" border-radius: 4px; font-size: {TY.mono_sm}px; font-weight: bold; }}"
             f"QPushButton:hover {{ background: #74b0e8; }}"
             f"QPushButton:disabled {{ background: {p.bg_overlay}; color: {p.fg_muted}; }}"
         )
@@ -402,7 +402,7 @@ class AiPanel(QWidget):
         hlay.setContentsMargins(12, 8, 12, 8)
         hlay.setSpacing(8)
         title = QLabel("🤖  AI Assistant")
-        title.setStyleSheet(f"font-size: {TY.xl}pt; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"font-size: {TY.xl}px; font-weight: bold; background: transparent;")
         hlay.addWidget(title, 1)
 
         new_btn = QPushButton("New")
@@ -583,11 +583,11 @@ class AiPanel(QWidget):
         )
         self._new_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.mono_sm}pt; }}"
+            f" border: 1px solid {p.border}; border-radius: 4px; font-size: {TY.mono_sm}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; border-color: {p.fg}; }}"
         )
         self._close_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {p.fg_muted};"
-            f" border: none; font-size: {TY.lg}pt; }}"
+            f" border: none; font-size: {TY.lg}px; }}"
             f"QPushButton:hover {{ color: {p.red}; }}"
         )
