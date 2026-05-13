@@ -65,16 +65,24 @@ class PtyProcess(QThread):
         else:
             args = [self._shell, "-i", "-c", self._cmd]
 
-        self._proc = subprocess.Popen(
-            args,
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            close_fds=True,
-            cwd=self._cwd,
-            env=self._env,
-            preexec_fn=_pty_preexec,
-        )
+        try:
+            self._proc = subprocess.Popen(
+                args,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+                cwd=self._cwd,
+                env=self._env,
+                preexec_fn=_pty_preexec,
+            )
+        except (FileNotFoundError, PermissionError, OSError) as exc:
+            err_msg = f"\r\n\x1b[31m[Error] {exc}\x1b[0m\r\n"
+            self._stream.feed(err_msg.encode())
+            os.close(slave_fd)
+            self._master_fd = -1
+            self.process_finished.emit(127)
+            return
         os.close(slave_fd)
         self.start()   # begins the reader thread
 
