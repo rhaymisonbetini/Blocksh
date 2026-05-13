@@ -212,10 +212,15 @@ class MainWindow(QMainWindow):
     # ── settings navigation ───────────────────────────────────────────────────
 
     def _open_settings(self) -> None:
+        self._sidebar_was_collapsed = self._sidebar._collapsed
+        if not self._sidebar._collapsed:
+            self._sidebar._set_collapsed(True)
         self._right_stack.setCurrentIndex(1)
 
     def _close_settings(self) -> None:
         self._right_stack.setCurrentIndex(0)
+        if not getattr(self, "_sidebar_was_collapsed", False):
+            self._sidebar._set_collapsed(False)
         if self._panels:
             self._panels[self._active_index].focus_input()
 
