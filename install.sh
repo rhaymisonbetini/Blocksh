@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Blocksh — one-line installer
+# Blocksh — one-line installer / updater
 #
-# Usage:
+# Install:
 #   curl -fsSL https://raw.githubusercontent.com/rhaymisonbetini/Blocksh/main/install.sh | bash
+#
+# Update:
+#   curl -fsSL https://raw.githubusercontent.com/rhaymisonbetini/Blocksh/main/install.sh | bash -s -- --update
 #
 # What it does:
 #   1. Downloads Blocksh-x86_64.AppImage to ~/.local/bin/
@@ -21,34 +24,66 @@ ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 APPIMAGE="${INSTALL_DIR}/Blocksh.AppImage"
 
-BLUE='\033[0;34m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+BLUE='\033[0;34m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 info()    { echo -e "${BLUE}[•]${NC} $*"; }
 success() { echo -e "${GREEN}[✓]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
+die()     { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
+
+# ── Mode: install vs update ────────────────────────────────────────────────
+UPDATE_MODE=false
+for arg in "${@:-}"; do
+    [[ "${arg}" == "--update" ]] && UPDATE_MODE=true
+done
 
 echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}   Installing Blocksh${NC}"
+if $UPDATE_MODE; then
+    echo -e "${BLUE}   Updating Blocksh${NC}"
+else
+    echo -e "${BLUE}   Installing Blocksh${NC}"
+fi
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
+
+# ── Skip if already up-to-date (update mode only) ─────────────────────────
+if $UPDATE_MODE && [[ -f "${APPIMAGE}" ]]; then
+    info "Checking for updates..."
+    CHECKSUM_FILE="$(mktemp)"
+    curl -fsSL -o "${CHECKSUM_FILE}" "${RELEASE_URL}/Blocksh-x86_64.AppImage.sha256"
+    REMOTE_HASH=$(awk '{print $1}' "${CHECKSUM_FILE}")
+    rm -f "${CHECKSUM_FILE}"
+    LOCAL_HASH=$(sha256sum "${APPIMAGE}" | awk '{print $1}')
+    if [[ "${LOCAL_HASH}" == "${REMOTE_HASH}" ]]; then
+        success "Already up-to-date. Nothing to do."
+        echo ""
+        exit 0
+    fi
+    info "Update available — downloading new version..."
+fi
 
 mkdir -p "${INSTALL_DIR}" "${ICON_DIR}" "${DESKTOP_DIR}"
 
+# ── Download ───────────────────────────────────────────────────────────────
 info "Downloading Blocksh AppImage..."
-curl -fsSL --progress-bar -o "${APPIMAGE}" "${APPIMAGE_URL}"
+APPIMAGE_TMP="$(mktemp)"
+curl -fsSL --progress-bar -o "${APPIMAGE_TMP}" "${APPIMAGE_URL}"
 
+# ── Verify checksum ────────────────────────────────────────────────────────
 info "Verifying checksum..."
 CHECKSUM_FILE="$(mktemp)"
 curl -fsSL -o "${CHECKSUM_FILE}" "${RELEASE_URL}/Blocksh-x86_64.AppImage.sha256"
-EXPECTED=$(cat "${CHECKSUM_FILE}")
-ACTUAL=$(sha256sum "${APPIMAGE}" | awk '{print $1}')
+EXPECTED=$(awk '{print $1}' "${CHECKSUM_FILE}")
+ACTUAL=$(sha256sum "${APPIMAGE_TMP}" | awk '{print $1}')
 rm -f "${CHECKSUM_FILE}"
-if [ "${ACTUAL}" != "${EXPECTED}" ]; then
-    echo -e "\033[0;31m[✗]\033[0m Checksum mismatch — aborting installation." >&2
-    rm -f "${APPIMAGE}"
-    exit 1
+if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
+    rm -f "${APPIMAGE_TMP}"
+    die "Checksum mismatch — aborting installation."
 fi
 success "Checksum verified."
 
+# ── Install ────────────────────────────────────────────────────────────────
+mv "${APPIMAGE_TMP}" "${APPIMAGE}"
 chmod +x "${APPIMAGE}"
 success "AppImage saved to ${APPIMAGE}"
 
@@ -77,12 +112,16 @@ gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" 2>/dev/null || 
 
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}   Blocksh installed successfully!${NC}"
+if $UPDATE_MODE; then
+    echo -e "${GREEN}   Blocksh updated successfully!${NC}"
+else
+    echo -e "${GREEN}   Blocksh installed successfully!${NC}"
+fi
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "   Launch from your app menu  ${YELLOW}(search: Blocksh)${NC}"
 echo -e "   Or run directly:           ${YELLOW}${APPIMAGE}${NC}"
 echo ""
-echo -e "   To uninstall:"
-echo -e "   ${YELLOW}rm ${APPIMAGE} ${ICON_DIR}/blocksh.png ${DESKTOP_DIR}/blocksh.desktop${NC}"
+echo -e "   To update:   ${YELLOW}curl -fsSL https://raw.githubusercontent.com/rhaymisonbetini/Blocksh/main/install.sh | bash -s -- --update${NC}"
+echo -e "   To uninstall: ${YELLOW}rm ${APPIMAGE} ${ICON_DIR}/blocksh.png ${DESKTOP_DIR}/blocksh.desktop${NC}"
 echo ""
