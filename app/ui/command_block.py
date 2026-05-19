@@ -211,15 +211,17 @@ class CommandBlock(QWidget):
     def _sync_height(self) -> None:
         """Pin card and CommandBlock to the exact pixel height their content needs.
 
-        QPlainTextEdit.sizeHint() returns ~192 px regardless of content. Even with
-        _OutputEdit overriding sizeHint, updateGeometry() propagation can be deferred,
-        so the first layout pass may still over-allocate. Calling setFixedHeight on
-        both the card and this widget after every size change removes the ambiguity:
-        the parent blocks_layout is forced to give exactly what is needed.
+        setFixedHeight() on child widgets calls updateGeometry() which posts a
+        LayoutRequest event — asynchronous. Reading sizeHint() immediately after
+        returns the stale cached value. invalidate() + activate() flush that cache
+        synchronously so sizeHint() reflects the new child sizes.
         """
         if self._card is None:
             return
-        h = self._card.layout().sizeHint().height()
+        lay = self._card.layout()
+        lay.invalidate()
+        lay.activate()
+        h = lay.sizeHint().height()
         self._card.setFixedHeight(h)
         self.setFixedHeight(h)
 
@@ -444,6 +446,8 @@ class CommandBlock(QWidget):
         out.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
         )
+        # setTextCursor() called earlier scrolled to end; reset so first line is visible.
+        out.verticalScrollBar().setValue(0)
 
         return out
 
@@ -500,6 +504,8 @@ class CommandBlock(QWidget):
             _insert_ansi_text(cursor, display)
             self._output_widget.setTextCursor(cursor)
             self._resize_output()
+            # setTextCursor scrolled to end during re-render; show from the top.
+            self._output_widget.verticalScrollBar().setValue(0)
 
         from ..services.ai_service import AiService
         if AiService.instance().is_enabled():
