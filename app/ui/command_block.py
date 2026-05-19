@@ -406,7 +406,7 @@ class CommandBlock(QWidget):
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
-        out.document().setDocumentMargin(0)
+        out.document().setDocumentMargin(2)
         out.setContentsMargins(0, 0, 0, 0)
         fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
@@ -436,10 +436,11 @@ class CommandBlock(QWidget):
 
         line_h     = QFontMetrics(font).lineSpacing()
         line_count = out.document().blockCount()
-        content_h  = line_count * line_h + 2
-        max_h      = 200 * line_h + 2
+        doc_margin = int(out.document().documentMargin())
+        content_h  = line_count * line_h + 2 * doc_margin + 2
+        max_h      = 200 * line_h + 2 * doc_margin + 2
         capped     = content_h >= max_h
-        out.setFixedHeight(max(line_h + 2, min(max_h, content_h)))
+        out.setFixedHeight(max(line_h + 2 * doc_margin + 2, min(max_h, content_h)))
         out.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
         )
@@ -560,7 +561,7 @@ class CommandBlock(QWidget):
         out.setReadOnly(True)
         out.setFont(font)
         out.setFrameShape(QFrame.NoFrame)
-        out.document().setDocumentMargin(0)
+        out.document().setDocumentMargin(2)
         out.setContentsMargins(0, 0, 0, 0)
         fg_color = _s.output_fg_override or p.fg
         out.setStyleSheet(
@@ -570,20 +571,21 @@ class CommandBlock(QWidget):
         out.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         out.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         line_h = QFontMetrics(font).lineSpacing()
-        out.setFixedHeight(line_h + 2)
+        out.setFixedHeight(line_h + 4 + 2)  # line_h + 2*documentMargin + safety
         return out
 
     def _resize_output(self) -> None:
         if self._output_widget is None:
             return
         font = self._output_widget.font()
-        line_h = QFontMetrics(font).lineSpacing()
+        line_h     = QFontMetrics(font).lineSpacing()
         line_count = self._output_widget.document().blockCount()
-        content_h  = line_count * line_h + 2
-        max_h      = 200 * line_h + 2
+        doc_margin = int(self._output_widget.document().documentMargin())
+        content_h  = line_count * line_h + 2 * doc_margin + 2
+        max_h      = 200 * line_h + 2 * doc_margin + 2
         capped     = content_h >= max_h
         new_h      = min(max_h, content_h)
-        self._output_widget.setFixedHeight(max(line_h + 2, new_h))
+        self._output_widget.setFixedHeight(max(line_h + 2 * doc_margin + 2, new_h))
         self._output_widget.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
         )
