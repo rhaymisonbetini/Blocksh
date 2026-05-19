@@ -437,11 +437,16 @@ class CommandBlock(QWidget):
             )
 
         line_h     = QFontMetrics(font).lineSpacing()
-        line_count = out.document().blockCount()
         doc_margin = int(out.document().documentMargin())
-        content_h  = line_count * line_h + 2 * doc_margin + 2
-        max_h      = 200 * line_h + 2 * doc_margin + 2
-        capped     = content_h >= max_h
+        # QFontMetrics.lineSpacing() is int; cumulative rounding over many lines causes
+        # the widget to be slightly too short. Force a layout pass with a wide page so
+        # terminal lines don't wrap, then read the exact float-based document height.
+        out.document().setTextWidth(4000)
+        doc_h     = int(out.document().size().height())
+        out.document().setTextWidth(-1)
+        content_h = doc_h + 2
+        max_h     = 200 * line_h + 2 * doc_margin + 2
+        capped    = content_h >= max_h
         out.setFixedHeight(max(line_h + 2 * doc_margin + 2, min(max_h, content_h)))
         out.setVerticalScrollBarPolicy(
             Qt.ScrollBarAsNeeded if capped else Qt.ScrollBarAlwaysOff
@@ -583,11 +588,13 @@ class CommandBlock(QWidget):
     def _resize_output(self) -> None:
         if self._output_widget is None:
             return
-        font = self._output_widget.font()
+        font       = self._output_widget.font()
         line_h     = QFontMetrics(font).lineSpacing()
-        line_count = self._output_widget.document().blockCount()
         doc_margin = int(self._output_widget.document().documentMargin())
-        content_h  = line_count * line_h + 2 * doc_margin + 2
+        # Widget is shown; document().size() uses the actual viewport width and
+        # float-based font metrics — more accurate than blockCount * lineSpacing().
+        doc_h      = int(self._output_widget.document().size().height())
+        content_h  = doc_h + 2
         max_h      = 200 * line_h + 2 * doc_margin + 2
         capped     = content_h >= max_h
         new_h      = min(max_h, content_h)
