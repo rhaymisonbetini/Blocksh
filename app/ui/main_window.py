@@ -236,6 +236,14 @@ class MainWindow(QMainWindow):
     def _esc_settings(self) -> None:
         if self._right_stack.currentIndex() == 1:
             self._close_settings()
+            return
+        # QShortcut consumes ESC before PtyWidget.keyPressEvent can handle it;
+        # forward the byte directly so "esc to interrupt" works inside PTY sessions.
+        if self._panels:
+            container = self._panels[self._active_index]
+            panel = container._active
+            if panel and panel._pty_widget and panel._pty_widget._process:
+                panel._pty_widget._process.write(b"\x1b")
 
     # ── tab management ────────────────────────────────────────────────────────
 
