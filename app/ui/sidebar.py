@@ -147,8 +147,8 @@ class Sidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(210)
-        self._collapsed = False
+        self.setFixedWidth(52)
+        self._collapsed = True
         self._nav_buttons: list[_NavButton] = []
         self._build_ui()
 
@@ -178,38 +178,15 @@ class Sidebar(QWidget):
         page = QWidget()
         page.setStyleSheet("QWidget { background: transparent; }")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 10, 8, 12)
+        layout.setContentsMargins(4, 10, 4, 12)
         layout.setSpacing(2)
-
-        # ── header: logo + collapse toggle ───────────────────────────────────
-        p0 = ThemeManager.instance().current
-        self._logo = QLabel(f'<b style="color:{p0.blue}">&gt;_</b> Blocksh')
-        self._logo.setTextFormat(Qt.RichText)
-        self._logo.setStyleSheet(
-            f"color: {p0.fg}; font-size: {TY.md}px;"
-            " font-weight: bold; padding: 4px 8px 4px 8px;"
-            " background: transparent;"
-        )
-        layout.addWidget(self._logo)
-
-        _cr = QWidget()
-        _cr.setStyleSheet("QWidget { background: transparent; }")
-        _crl = QHBoxLayout(_cr)
-        _crl.setContentsMargins(0, 0, 0, 12)
-        _crl.setSpacing(0)
-        _crl.addStretch(1)
-        self._collapse_btn = QPushButton("«")
-        self._collapse_btn.setFixedSize(28, 28)
-        self._collapse_btn.setToolTip("Collapse sidebar")
-        self._collapse_btn.clicked.connect(self._toggle_collapse)
-        _crl.addWidget(self._collapse_btn)
-        layout.addWidget(_cr)
 
         nav_group = QButtonGroup(page)
         nav_group.setExclusive(True)
 
         for icon, label, active in _NAV_MAIN:
             btn = _NavButton(icon, label, active)
+            btn.set_collapsed(True)
             nav_group.addButton(btn)
             self._nav_buttons.append(btn)
             if label == "Terminal":
@@ -235,6 +212,7 @@ class Sidebar(QWidget):
 
         for icon, label, active in _NAV_FOOTER:
             btn = _NavButton(icon, label, active)
+            btn.set_collapsed(True)
             nav_group.addButton(btn)
             self._nav_buttons.append(btn)
             if label == "Themes":
@@ -246,7 +224,9 @@ class Sidebar(QWidget):
             layout.addWidget(btn)
 
         layout.addSpacing(12)
-        layout.addWidget(self._build_system_info())
+        self._sys_info_widget = self._build_system_info()
+        self._sys_info_widget.setVisible(False)
+        layout.addWidget(self._sys_info_widget)
 
         return page
 
@@ -257,7 +237,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 12, 8, 12)
         layout.setSpacing(6)
 
-        header = self._build_sub_header("History", lambda: self._stack.setCurrentIndex(0))
+        header = self._build_sub_header("History", self._back_to_nav)
         layout.addWidget(header)
 
         self._hist_sep = QFrame()
@@ -288,7 +268,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 12, 8, 12)
         layout.setSpacing(6)
 
-        header = self._build_sub_header("Themes", lambda: self._stack.setCurrentIndex(0))
+        header = self._build_sub_header("Themes", self._back_to_nav)
         layout.addWidget(header)
 
         self._themes_sep = QFrame()
@@ -332,7 +312,7 @@ class Sidebar(QWidget):
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
-        self._favs_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        self._favs_back_btn.clicked.connect(self._back_to_nav)
         back_btn = self._favs_back_btn
 
         self._favs_title_lbl = QLabel("Favorites")
@@ -398,7 +378,7 @@ class Sidebar(QWidget):
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
-        self._proj_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        self._proj_back_btn.clicked.connect(self._back_to_nav)
         back_btn = self._proj_back_btn
 
         self._proj_title_lbl = QLabel("Projects")
@@ -465,7 +445,7 @@ class Sidebar(QWidget):
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
-        self._ssh_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        self._ssh_back_btn.clicked.connect(self._back_to_nav)
         back_btn = self._ssh_back_btn
 
         self._ssh_title_lbl = QLabel("SSH")
@@ -530,7 +510,7 @@ class Sidebar(QWidget):
             f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: none; font-size: {TY.md}px; }}"
             f"QPushButton:hover {{ color: {p.fg}; }}"
         )
-        self._wf_back_btn.clicked.connect(lambda: self._stack.setCurrentIndex(0))
+        self._wf_back_btn.clicked.connect(self._back_to_nav)
         back_btn = self._wf_back_btn
 
         self._wf_title_lbl = QLabel("Workflows")
@@ -582,7 +562,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(8, 12, 8, 12)
         layout.setSpacing(8)
 
-        header = self._build_sub_header("About", lambda: self._stack.setCurrentIndex(0))
+        header = self._build_sub_header("About", self._back_to_nav)
         layout.addWidget(header)
 
         self._about_sep = QFrame()
@@ -727,17 +707,6 @@ class Sidebar(QWidget):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
-        self._logo.setText(f'<b style="color:{p.blue}">&gt;_</b> Blocksh')
-        self._logo.setStyleSheet(
-            f"color: {p.fg}; font-size: {TY.md}px;"
-            f" font-weight: bold; padding: 4px 8px 4px 8px; background: transparent;"
-        )
-        if hasattr(self, "_collapse_btn"):
-            self._collapse_btn.setStyleSheet(
-                f"QPushButton {{ background: {p.bg_surface}; color: {p.fg_muted}; border: 1px solid {p.border};"
-                f" border-radius: 8px; font-size: {TY.sm}px; }}"
-                f"QPushButton:hover {{ background: {p.bg_hover}; color: {p.fg}; }}"
-            )
         sep_style = f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
         self._nav_sep.setStyleSheet(sep_style)
         self._hist_sep.setStyleSheet(sep_style)
@@ -779,116 +748,79 @@ class Sidebar(QWidget):
 
         self._refresh_themes_list(p)
 
-    # ── navigation ────────────────────────────────────────────────────────────
+    # ── collapse / expand (automatic, no manual toggle) ──────────────────────
 
-    # ── collapse ──────────────────────────────────────────────────────────────
-
-    def _toggle_collapse(self) -> None:
-        self._set_collapsed(not self._collapsed)
+    def _back_to_nav(self) -> None:
+        """Return to icon-only nav, collapsing the sidebar."""
+        self._stack.setCurrentIndex(0)
+        self._set_collapsed(True)
 
     def _set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
-        target_w = 48 if collapsed else 210
+        target_w = 52 if collapsed else 210
 
         for btn in self._nav_buttons:
             btn.set_collapsed(collapsed)
 
-        if collapsed:
-            self._logo.setVisible(False)
-            self._info_lbl.setVisible(False)
-            self._cwd_label.setVisible(False)
-            if self._stack.currentIndex() != 0:
-                self._stack.setCurrentIndex(0)
-            self._collapse_btn.setText("»")
-            self._collapse_btn.setToolTip("Expand sidebar")
-
-        # animate width
         self.setMinimumWidth(0)
         self._anim = QPropertyAnimation(self, b"maximumWidth", self)
-        self._anim.setDuration(200)
+        self._anim.setDuration(150)
         self._anim.setStartValue(self.width())
         self._anim.setEndValue(target_w)
         self._anim.setEasingCurve(QEasingCurve.InOutCubic)
 
-        if not collapsed:
+        if collapsed:
+            self._info_lbl.setVisible(False)
+            self._cwd_label.setVisible(False)
+            self._sys_info_widget.setVisible(False)
+            self._anim.finished.connect(lambda: self.setFixedWidth(52))
+        else:
             def _on_done():
                 self.setFixedWidth(target_w)
-                self._logo.setVisible(True)
                 self._info_lbl.setVisible(True)
                 self._cwd_label.setVisible(True)
-                self._collapse_btn.setText("«")
-                self._collapse_btn.setToolTip("Collapse sidebar")
+                self._sys_info_widget.setVisible(True)
             self._anim.finished.connect(_on_done)
-        else:
-            self._anim.finished.connect(lambda: self.setFixedWidth(48))
 
         self._anim.start()
+
+    def _expand_to(self, page_index: int) -> None:
+        """Switch to sub-page and expand sidebar if currently collapsed."""
+        self._stack.setCurrentIndex(page_index)
+        if self._collapsed:
+            self._set_collapsed(False)
 
     # ── navigation ────────────────────────────────────────────────────────────
 
     def _open_history(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(1))
-            self.history_open_requested.emit()
-            return
-        self._stack.setCurrentIndex(1)
+        self._expand_to(1)
         self.history_open_requested.emit()
 
     def _open_favorites(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(3))
-            self.favorites_open_requested.emit()
-            return
-        self._stack.setCurrentIndex(3)
+        self._expand_to(3)
         self.favorites_open_requested.emit()
 
     def _open_projects(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(4))
-            self.projects_open_requested.emit()
-            return
-        self._stack.setCurrentIndex(4)
+        self._expand_to(4)
         self.projects_open_requested.emit()
 
     def _open_themes(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._refresh_themes_list(ThemeManager.instance().current)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(2))
-            return
         self._refresh_themes_list(ThemeManager.instance().current)
-        self._stack.setCurrentIndex(2)
+        self._expand_to(2)
 
     def _open_settings(self) -> None:
         self.settings_requested.emit()
 
     def _open_ssh(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(5))
-            self.ssh_open_requested.emit()
-            return
-        self._stack.setCurrentIndex(5)
+        self._expand_to(5)
         self.ssh_open_requested.emit()
 
     def _open_workflows(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(6))
-            self.workflows_open_requested.emit()
-            return
-        self._stack.setCurrentIndex(6)
+        self._expand_to(6)
         self.workflows_open_requested.emit()
 
     def _open_about(self) -> None:
-        if self._collapsed:
-            self._set_collapsed(False)
-            self._anim.finished.connect(lambda: self._stack.setCurrentIndex(7))
-            return
-        self._stack.setCurrentIndex(7)
+        self._expand_to(7)
 
     @staticmethod
     def _make_list_widget(spacing: int = 2) -> tuple["QWidget", "QVBoxLayout"]:

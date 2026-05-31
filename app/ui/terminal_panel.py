@@ -80,7 +80,6 @@ class _EmptyState(QWidget):
         self._btns: list[tuple[QPushButton, str]] = []
         for label, cmd in [
             ("Open Project",   ""),
-            ("Run README",     "cat README.md"),
             ("List Files",     "ls -la"),
         ]:
             btn = QPushButton(label)
@@ -240,9 +239,9 @@ class TerminalPanel(QWidget):
 
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         layout.addWidget(self._input_bar)
-        layout.addSpacing(6)
+        layout.addSpacing(4)
 
         # Popup is a child of this panel — overlaps siblings, no top-level issues
         self._completion_popup = CompletionPopup(self)
@@ -456,7 +455,7 @@ class TerminalPanel(QWidget):
         if not name_prefix and not path_prefix:
             return
 
-        matches = self._get_completions(path_prefix, name_prefix)
+        matches = self._get_completions(path_prefix, name_prefix, base)
         if not matches:
             return
 
@@ -478,7 +477,7 @@ class TerminalPanel(QWidget):
             self._close_completion()
             return
 
-        matches = self._get_completions(path_prefix, name_prefix)
+        matches = self._get_completions(path_prefix, name_prefix, base)
         if matches:
             self._completion_popup.update_items(matches)
             self._position_completion_popup()
@@ -519,7 +518,9 @@ class TerminalPanel(QWidget):
         self._completion_popup.setFixedWidth(popup_w)
         self._completion_popup.move(x, y)
 
-    def _get_completions(self, path_prefix: str, name_prefix: str) -> list[tuple[str, bool]]:
+    def _get_completions(
+        self, path_prefix: str, name_prefix: str, base: str = ""
+    ) -> list[tuple[str, bool]]:
         cwd = self._session.cwd
 
         if path_prefix:
@@ -532,34 +533,30 @@ class TerminalPanel(QWidget):
         else:
             search_dir = cwd
 
+        matches: list[tuple[str, bool]] = []
         try:
-            matches = []
             with os.scandir(search_dir) as entries:
                 for entry in entries:
                     if entry.name.startswith(name_prefix):
                         is_dir = entry.is_dir()
                         matches.append((path_prefix + entry.name + ("/" if is_dir else ""), is_dir))
-
-            # #43: also complete executables from PATH when no path separator typed
-            if not path_prefix:
-                seen = {m[0] for m in matches}
-                env_path = os.environ.get("PATH", "")
-                for path_dir in env_path.split(os.pathsep):
-                    try:
-                        with os.scandir(path_dir) as bin_entries:
-                            for entry in bin_entries:
-                                if (entry.name.startswith(name_prefix)
-                                        and entry.name not in seen
-                                        and entry.is_file(follow_symlinks=True)
-                                        and os.access(entry.path, os.X_OK)):
-                                    matches.append((entry.name, False))
-                                    seen.add(entry.name)
-                    except (PermissionError, FileNotFoundError, OSError):
-                        continue
-
-            return sorted(matches, key=lambda x: (not x[1], x[0].lower()))
         except (PermissionError, FileNotFoundError, OSError):
-            return []
+            pass
+
+        # History-based completions (only when not navigating a path)
+        if not path_prefix:
+            full_typed = base + name_prefix
+            seen = {m[0] for m in matches}
+            for cmd in self._history.commands()[-200:]:
+                if cmd.startswith(full_typed) and cmd != full_typed:
+                    suffix = cmd[len(base):]
+                    if suffix not in seen:
+                        matches.append((suffix, False))
+                        seen.add(suffix)
+                        if len(matches) >= 50:
+                            break
+
+        return sorted(matches, key=lambda x: (not x[1], x[0].lower()))
 
     # ── AI handlers ───────────────────────────────────────────────────────────
 

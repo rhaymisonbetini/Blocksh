@@ -135,8 +135,8 @@ class InputBar(QWidget):
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(8)
 
         self._input = _HistoryInput()
         self._input.command_submitted.connect(self._submit)
@@ -168,11 +168,15 @@ class InputBar(QWidget):
     def apply_theme(self, p: Palette) -> None:
         mono = get_mono_font()
         ai_mode = self._input.toPlainText().startswith("> ")
-        border_color = p.blue if ai_mode else p.border
-        self.setStyleSheet(
-            f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {border_color};"
-            f" border-radius: 10px; }}"
-        )
+        if ai_mode:
+            self.setStyleSheet(
+                f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
+                f" border-radius: 8px; }}"
+            )
+        else:
+            self.setStyleSheet(
+                f"QWidget#InputBar {{ background: {p.bg}; border: none; border-radius: 0px; }}"
+            )
         self._input.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
             f" font-family: {mono}; font-size: {TY.base}px; }}"
@@ -353,11 +357,15 @@ class InputBar(QWidget):
     def _on_ai_mode_check(self) -> None:
         p = ThemeManager.instance().current
         ai_mode = self._input.toPlainText().startswith("> ")
-        border_color = p.blue if ai_mode else p.border
-        self.setStyleSheet(
-            f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {border_color};"
-            f" border-radius: 10px; }}"
-        )
+        if ai_mode:
+            self.setStyleSheet(
+                f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
+                f" border-radius: 8px; }}"
+            )
+        else:
+            self.setStyleSheet(
+                f"QWidget#InputBar {{ background: {p.bg}; border: none; border-radius: 0px; }}"
+            )
         self._apply_ai_mode_style(p, ai_mode)
 
     def _apply_ai_mode_style(self, p: Palette, ai_mode: bool) -> None:
