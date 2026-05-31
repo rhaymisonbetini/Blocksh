@@ -150,7 +150,8 @@ class TerminalPanel(QWidget):
         self._ai_workers:        list = []
         self._agent_worker       = None   # current AgentWorker (if running)
         self._agent_session      = None   # persistent AgentSession (one per tab)
-        self._ai_panel_was_open: bool = False  # remembers AI panel state across PTY session
+        self._ai_panel_was_open:   bool = False  # remembers AI panel state across PTY session
+        self._banner_was_visible:  bool = False  # remembers permission banner state across PTY
 
         # Completion debounce: avoid filesystem I/O on every keystroke (#105)
         self._completion_timer = QTimer(self)
@@ -410,6 +411,9 @@ class TerminalPanel(QWidget):
         self._sep.setVisible(False)
         self._input_wrapper.setVisible(False)
         self._empty_state.setVisible(False)
+        # Track banner visibility before hiding it so _destroy_pty can restore
+        # the correct state instead of always making it visible (#118 #120).
+        self._banner_was_visible = self._permission_banner.isVisible()
         self._permission_banner.setVisible(False)
 
         # If the AI panel overlay is open, close it before the PTY takes over.
@@ -456,7 +460,12 @@ class TerminalPanel(QWidget):
         self._scroll.setVisible(True)
         self._sep.setVisible(False)
         self._input_wrapper.setVisible(True)
-        self._permission_banner.setVisible(True)
+        # Only restore the banner if it was explicitly visible before the PTY started.
+        # Unconditional setVisible(True) was causing "Your answer… [Send] [Allow] [Deny]"
+        # to appear after /exit because AiPermissionBanner children start uninitialized (#118).
+        if self._banner_was_visible:
+            self._permission_banner.setVisible(True)
+        self._banner_was_visible = False
         # AI panel is intentionally NOT restored here — the PTY session is over
         # and the user should return to the normal terminal view.
         self._ai_panel_was_open = False
