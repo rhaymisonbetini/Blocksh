@@ -1,14 +1,82 @@
 import sqlite3
+import threading
+from contextlib import contextmanager
+from typing import Generator
+
 from ...infra.config.settings import DB_PATH
 
 
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row  # allows column access by name
-    return conn
+class ThreadSafeConnection:
+    """
+    Thread-safe wrapper around a single sqlite3.Connection.
+
+    Uses a reentrant lock so that nested calls within the same thread
+    (e.g. executescript → commit) do not deadlock.  WAL journal mode
+    is enabled at construction time for better read/write concurrency.
+
+    The public interface mirrors the subset of sqlite3.Connection that
+    the repository layer actually uses, so existing callers need no changes.
+    """
+
+    def __init__(self, path: str) -> None:
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        # WAL gives concurrent readers while a writer holds the lock,
+        # and avoids "database is locked" errors under parallel tab usage.
+        with self._lock:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.commit()
+
+    # ── context manager for multi-step atomic operations ──────────────────────
+
+    @contextmanager
+    def atomic(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield the raw connection inside the reentrant lock.
+
+        Use this whenever execute + commit must be kept atomic:
+
+            with conn.atomic() as c:
+                c.execute("INSERT ...", (...))
+                c.commit()
+        """
+        with self._lock:
+            yield self._conn
+
+    # ── drop-in replacements for the sqlite3.Connection API ──────────────────
+
+    @property
+    def row_factory(self):
+        return self._conn.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value) -> None:
+        with self._lock:
+            self._conn.row_factory = value
+
+    def execute(self, sql: str, params=()) -> sqlite3.Cursor:
+        with self._lock:
+            return self._conn.execute(sql, params)
+
+    def executescript(self, sql: str) -> sqlite3.Cursor:
+        with self._lock:
+            return self._conn.executescript(sql)
+
+    def commit(self) -> None:
+        with self._lock:
+            self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
 
 
-def initialize_schema(conn: sqlite3.Connection) -> None:
+def get_connection() -> ThreadSafeConnection:
+    return ThreadSafeConnection(str(DB_PATH))
+
+
+def initialize_schema(conn: ThreadSafeConnection) -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             id   TEXT PRIMARY KEY,

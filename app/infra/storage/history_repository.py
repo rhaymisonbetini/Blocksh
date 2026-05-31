@@ -2,33 +2,35 @@ import sqlite3
 from datetime import datetime
 from ...domain.command import Command
 from ...domain.block import Block
+from .database import ThreadSafeConnection
 
 
 class HistoryRepository:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: ThreadSafeConnection):
         self._conn = conn
 
     def save_block(self, block: Block, session_id: str) -> None:
-        self._conn.execute(
-            """
-            INSERT INTO blocks
-                (id, session_id, command_text, command_status,
-                 created_at, stdout, stderr, exit_code, cwd)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                block.command.id,
-                session_id,
-                block.command.text,
-                block.command.status,
-                block.command.created_at.isoformat(),
-                block.stdout,
-                block.stderr,
-                block.exit_code,
-                block.cwd,
-            ),
-        )
-        self._conn.commit()
+        with self._conn.atomic() as c:
+            c.execute(
+                """
+                INSERT INTO blocks
+                    (id, session_id, command_text, command_status,
+                     created_at, stdout, stderr, exit_code, cwd)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    block.command.id,
+                    session_id,
+                    block.command.text,
+                    block.command.status,
+                    block.command.created_at.isoformat(),
+                    block.stdout,
+                    block.stderr,
+                    block.exit_code,
+                    block.cwd,
+                ),
+            )
+            c.commit()
 
     def load_recent(self, limit: int = 200) -> list[Block]:
         """Returns the most recent blocks across all sessions, oldest first."""
