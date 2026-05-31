@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QCheckBox, QColorDialog, QComboBox, QFileDialog, QFontComboBox, QFrame,
+    QCheckBox, QColorDialog, QComboBox, QDialog, QFileDialog, QFontComboBox, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -361,33 +361,96 @@ class _DataManagementSection(QWidget):
 
         vbox.addWidget(self._status_lbl)
 
-    def _confirm(self, msg: str) -> bool:
-        return QMessageBox.question(
-            self, "Confirm", msg, QMessageBox.Yes | QMessageBox.No
-        ) == QMessageBox.Yes
+    def _confirm(self, msg: str, action_label: str = "Confirm") -> bool:
+        p = ThemeManager.instance().current
+        dlg = QDialog(self)
+        dlg.setModal(True)
+        dlg.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        dlg.setAttribute(Qt.WA_TranslucentBackground, False)
+        dlg.setFixedWidth(400)
+        dlg.setStyleSheet(
+            f"QDialog {{ background: {p.bg_surface}; border: 1px solid {p.red_ui};"
+            f" border-radius: 12px; }}"
+        )
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 24, 24, 20)
+        layout.setSpacing(10)
+
+        title_lbl = QLabel("Confirm action")
+        title_lbl.setStyleSheet(
+            f"color: {p.fg}; font-size: 15px; font-weight: bold; background: transparent; border: none;"
+        )
+        layout.addWidget(title_lbl)
+
+        msg_lbl = QLabel(msg)
+        msg_lbl.setWordWrap(True)
+        msg_lbl.setStyleSheet(
+            f"color: {p.fg_muted}; font-size: 12px; line-height: 1.45;"
+            f" background: transparent; border: none;"
+        )
+        layout.addWidget(msg_lbl)
+
+        layout.addSpacing(8)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(32)
+        cancel_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: 1px solid {p.border};"
+            f" border-radius: 6px; font-size: 12px; padding: 0 16px; }}"
+            f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
+        )
+        cancel_btn.clicked.connect(dlg.reject)
+
+        confirm_btn = QPushButton(action_label)
+        confirm_btn.setFixedHeight(32)
+        confirm_btn.setStyleSheet(
+            f"QPushButton {{ background: {p.red_ui}; color: #ffffff; border: none;"
+            f" border-radius: 6px; font-size: 12px; font-weight: bold; padding: 0 16px; }}"
+            f"QPushButton:hover {{ background: #ef4444; }}"
+        )
+        confirm_btn.clicked.connect(dlg.accept)
+
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(confirm_btn)
+        layout.addLayout(btn_row)
+
+        from PySide6.QtCore import QPoint
+        parent_rect = self.window().rect()
+        center = self.window().mapToGlobal(parent_rect.center())
+        dlg.move(center - QPoint(dlg.width() // 2, 80))
+
+        return dlg.exec() == QDialog.Accepted
 
     def _clear_history(self) -> None:
-        if self._confirm("Delete ALL command history? This cannot be undone."):
+        if self._confirm("Delete ALL command history? This cannot be undone.", "Clear history"):
             self._repo.clear_all()
             self._status_lbl.setText("Command history cleared.")
             self.data_cleared.emit()
 
     def _clear_favorites(self) -> None:
-        if self._confirm("Delete ALL favorites? This cannot be undone."):
+        if self._confirm("Delete ALL favorites? This cannot be undone.", "Clear favorites"):
             self._fav_repo.clear_all()
             self._status_lbl.setText("Favorites cleared.")
             self.data_cleared.emit()
 
     def _clear_projects(self) -> None:
-        if self._confirm("Delete ALL projects? This cannot be undone."):
+        if self._confirm("Delete ALL projects? This cannot be undone.", "Clear projects"):
             self._proj_repo.clear_all()
             self._status_lbl.setText("Projects cleared.")
             self.data_cleared.emit()
 
     def _clear_all(self) -> None:
-        if not self._confirm("Delete ALL history, favorites, and projects? This cannot be undone."):
+        if not self._confirm(
+            "Delete all history, favorites, and projects?\n\nThis action cannot be undone.",
+            "Delete all data"
+        ):
             return
-        if not self._confirm("Are you absolutely sure? This is irreversible."):
+        if not self._confirm("Are you absolutely sure? This is irreversible.", "Yes, delete everything"):
             return
         self._repo.clear_all()
         self._fav_repo.clear_all()
