@@ -1,6 +1,6 @@
 import random
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton, QLabel
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
 from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtGui import QFont, QFontMetrics, QTextCursor
 
@@ -117,6 +117,7 @@ class InputBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("InputBar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
@@ -125,7 +126,7 @@ class InputBar(QWidget):
         # #35: dynamic height — grow up to 5 lines as user types
         font = QFont("Monospace", TY.mono_sm)
         self._line_h  = QFontMetrics(font).lineSpacing()
-        self._v_margin = 20   # layout top (10) + bottom (10) margins
+        self._v_margin = 16   # layout top (8) + bottom (8) margins
         self._input.document().contentsChanged.connect(self._adjust_height)
         self._adjust_height()
 
@@ -135,19 +136,8 @@ class InputBar(QWidget):
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 8, 12, 8)
+        layout.setContentsMargins(14, 8, 12, 8)
         layout.setSpacing(0)
-
-        # Prompt: cwd + $ symbol, inline before the input field
-        self._cwd_lbl = QLabel("~")
-        self._cwd_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-        self._dollar_lbl = QLabel(" $ ")
-        self._dollar_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-        layout.addWidget(self._cwd_lbl)
-        layout.addWidget(self._dollar_lbl)
-        layout.addSpacing(2)
 
         self._input = _HistoryInput()
         self._input.command_submitted.connect(self._submit)
@@ -184,14 +174,6 @@ class InputBar(QWidget):
         ai_mode = text.startswith("> ")
         has_text = bool(text.strip())
 
-        self._cwd_lbl.setStyleSheet(
-            f"color: {p.blue}; font-family: {mono}; font-size: {TY.base}px;"
-            f" background: transparent; font-weight: 500;"
-        )
-        self._dollar_lbl.setStyleSheet(
-            f"color: {p.green}; font-family: {mono}; font-size: {TY.base}px;"
-            f" background: transparent; font-weight: bold;"
-        )
         self._input.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
             f" font-family: {mono}; font-size: {TY.base}px; }}"
@@ -199,12 +181,13 @@ class InputBar(QWidget):
 
         if ai_mode:
             self.setStyleSheet(
-                f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
-                f" border-radius: {RD.sm}px; }}"
+                f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {p.blue};"
+                f" border-radius: {RD.lg}px; }}"
             )
         else:
             self.setStyleSheet(
-                f"QWidget#InputBar {{ background: {p.bg}; border: none; border-radius: 0px; }}"
+                f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {p.border};"
+                f" border-radius: {RD.lg}px; }}"
             )
         self._input.setStyleSheet(
             f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
@@ -342,8 +325,7 @@ class InputBar(QWidget):
         self._history = commands
 
     def update_cwd(self, display_path: str) -> None:
-        if hasattr(self, "_cwd_lbl"):
-            self._cwd_lbl.setText(display_path or "~")
+        pass  # CWD display removed from input bar
 
     def set_text(self, text: str) -> None:
         self._input.setPlainText(text)
@@ -391,12 +373,13 @@ class InputBar(QWidget):
         has_text = bool(text.strip())
         if ai_mode:
             self.setStyleSheet(
-                f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
-                f" border-radius: {RD.sm}px; }}"
+                f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {p.blue};"
+                f" border-radius: {RD.lg}px; }}"
             )
         else:
             self.setStyleSheet(
-                f"QWidget#InputBar {{ background: {p.bg}; border: none; border-radius: 0px; }}"
+                f"QWidget#InputBar {{ background: {p.bg_surface}; border: 1px solid {p.border};"
+                f" border-radius: {RD.lg}px; }}"
             )
         self._apply_ai_mode_style(p, ai_mode, has_text)
 

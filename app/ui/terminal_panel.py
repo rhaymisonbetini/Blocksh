@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame,
-    QLabel, QPushButton,
+    QLabel, QPushButton, QSizePolicy,
 )
 from PySide6.QtCore import Signal, QPoint, Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -161,7 +161,6 @@ class TerminalPanel(QWidget):
         _tm.theme_changed.connect(self.apply_theme)
         # Show empty state initially (positioned after first paint via QTimer)
         QTimer.singleShot(0, self._show_empty_state)
-        QTimer.singleShot(0, lambda: self._input_bar.update_cwd(self._session.cwd_display()))
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -200,6 +199,7 @@ class TerminalPanel(QWidget):
         layout = self._layout
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
         self._search_bar = SearchBar()
         self._search_bar.setVisible(False)
@@ -233,6 +233,7 @@ class TerminalPanel(QWidget):
 
         self._sep = QFrame()
         self._sep.setFrameShape(QFrame.HLine)
+        self._sep.setVisible(False)  # replaced by InputBar container visual
         layout.addWidget(self._sep)
 
         self._permission_banner = AiPermissionBanner()
@@ -240,10 +241,19 @@ class TerminalPanel(QWidget):
 
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
-        self.cwd_changed.connect(self._input_bar.update_cwd)
-        layout.addSpacing(4)
-        layout.addWidget(self._input_bar)
-        layout.addSpacing(4)
+
+        # Wrap in a container to give horizontal margins (so the rounded card floats)
+        input_wrapper = QWidget()
+        input_wrapper.setStyleSheet("QWidget { background: transparent; }")
+        iw_layout = QHBoxLayout(input_wrapper)
+        iw_layout.setContentsMargins(12, 0, 12, 0)
+        iw_layout.setSpacing(0)
+        iw_layout.addWidget(self._input_bar)
+        self._input_wrapper = input_wrapper
+
+        layout.addSpacing(0)
+        layout.addWidget(input_wrapper)
+        layout.addSpacing(10)
 
         # Popup is a child of this panel — overlaps siblings, no top-level issues
         self._completion_popup = CompletionPopup(self)
@@ -654,9 +664,6 @@ class TerminalPanel(QWidget):
             f"QScrollArea {{ border: none; background: {p.bg}; }}"
         )
         self._blocks_container.setStyleSheet(f"QWidget {{ background: {p.bg}; }}")
-        self._sep.setStyleSheet(
-            f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
-        )
         self._empty_state.apply_theme(p)
 
     def toggle_collapse_all(self) -> None:

@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
 
         self._v_sep = QFrame()
         self._v_sep.setFrameShape(QFrame.VLine)
+        self._v_sep.setVisible(False)
         root.addWidget(self._v_sep)
 
         # ── right side: QStackedWidget with terminal view (0) + settings (1) ──
