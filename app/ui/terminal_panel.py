@@ -251,7 +251,6 @@ class TerminalPanel(QWidget):
         iw_layout.addWidget(self._input_bar)
         self._input_wrapper = input_wrapper
 
-        layout.addSpacing(0)
         layout.addWidget(input_wrapper)
         layout.addSpacing(10)
 
@@ -398,7 +397,7 @@ class TerminalPanel(QWidget):
         # _on_pty_finished() restores them with setVisible(True).
         self._scroll.setVisible(False)
         self._sep.setVisible(False)
-        self._input_bar.setVisible(False)
+        self._input_wrapper.setVisible(False)
         self._empty_state.setVisible(False)
         self._permission_banner.setVisible(False)
 
@@ -434,8 +433,8 @@ class TerminalPanel(QWidget):
             self._pty_widget = None
 
         self._scroll.setVisible(True)
-        self._sep.setVisible(True)
-        self._input_bar.setVisible(True)
+        self._sep.setVisible(False)
+        self._input_wrapper.setVisible(True)
         self._permission_banner.setVisible(True)
         self._input_bar.focus()
 
@@ -517,14 +516,15 @@ class TerminalPanel(QWidget):
         self._input_bar.set_popup_open(False)
 
     def _position_completion_popup(self):
-        # Map the input field's top-left corner into TerminalPanel coordinates.
-        # input_bar lives inside input_wrapper, so use mapTo for correct origin
-        # and input_wrapper.y() for the vertical anchor (input_bar.y() is 0 inside wrapper).
+        # Anchor popup just above the input wrapper.
+        # Use wrapper geometry for y (input_bar.y() == 0 inside wrapper).
+        # Use wrapper width minus its horizontal margins for popup width.
         field_rect = self._input_bar.input_field_rect()
         field_origin = self._input_bar.mapTo(self, QPoint(field_rect.x(), 0))
 
         popup_h = self._completion_popup.height()
-        popup_w = max(220, field_rect.width())
+        # Match the visual width of the InputBar card (wrapper - 12px each side)
+        popup_w = max(220, self._input_wrapper.width() - 24)
 
         x = field_origin.x()
         y = self._input_wrapper.y() - popup_h - 4

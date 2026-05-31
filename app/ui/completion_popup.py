@@ -10,6 +10,7 @@ class CompletionPopup(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.hide()
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self._items: list[str] = []
         self._selected = -1
         self._buttons: list[QPushButton] = []
@@ -29,6 +30,7 @@ class CompletionPopup(QFrame):
         self._scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.viewport().setStyleSheet("background: transparent;")
 
         self._list = QWidget()
         self._list.setStyleSheet("QWidget { background: transparent; }")
