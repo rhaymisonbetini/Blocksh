@@ -315,7 +315,10 @@ class MainWindow(QMainWindow):
         self._active_index = index
         self._tab_bar.set_active(index)
         self._stack.setCurrentIndex(index)
-        self._panels[index].focus_input()
+        # Defer by one event-loop cycle: QStackedWidget needs to finish its
+        # geometry update before setFocus() succeeds reliably (#103).
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._panels[index].focus_input)
         self._sidebar.update_cwd(self._panels[index].cwd_display)
         self._update_title()
 

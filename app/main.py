@@ -106,6 +106,11 @@ def main():
                         favorites_repo=favorites_repo, project_repo=project_repo,
                         ssh_service=ssh_service, workflow_service=workflow_service)
     window.show()
+    window.activateWindow()   # bring to foreground on some window managers
+    # Defer focus by one event-loop cycle so Qt finishes painting the window
+    # before focus is set — prevents the focus request from being swallowed.
+    from PySide6.QtCore import QTimer
+    QTimer.singleShot(0, lambda: window._panels[0].focus_input() if window._panels else None)
 
     sys.exit(app.exec())
 
