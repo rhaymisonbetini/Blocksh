@@ -136,10 +136,10 @@ class TerminalPanel(QWidget):
     ai_chat_opened           = Signal()             # emitted when AI overlay becomes visible
     ai_chat_closed           = Signal()             # emitted when AI overlay is dismissed
 
-    def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None):
+    def __init__(self, executor: BaseExecutor, repository: HistoryRepository, parent=None, initial_cwd: str | None = None):
         super().__init__(parent)
         self._executor  = executor
-        self._session   = ShellSession()
+        self._session   = ShellSession(initial_cwd=initial_cwd)
         self._history   = HistoryService(repository)
 
         self._match_blocks:    list[CommandBlock] = []

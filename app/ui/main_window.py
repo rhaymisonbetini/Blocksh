@@ -277,7 +277,12 @@ class MainWindow(QMainWindow):
     # ── tab management ────────────────────────────────────────────────────────
 
     def _add_tab(self) -> None:
-        container = SplitPaneContainer(self._executor, self._repository)
+        initial_cwd: str | None = None
+        if self._panels and 0 <= self._active_index < len(self._panels):
+            active_panel = self._panels[self._active_index]._active
+            if active_panel is not None:
+                initial_cwd = active_panel._session.cwd
+        container = SplitPaneContainer(self._executor, self._repository, initial_cwd=initial_cwd)
         container.cwd_changed.connect(
             lambda cwd, c=container: self._on_panel_cwd_changed(cwd, c)
         )

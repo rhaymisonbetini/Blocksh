@@ -16,12 +16,21 @@ def _pty_preexec() -> None:
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
 
+# Alternate screen entry/exit sequences (DECSET/DECRST 1049).
+# pyte 0.8 has no built-in alt-screen support — we intercept these here so
+# that TUI apps (claude, vim, htop, …) draw into a separate buffer and never
+# pollute the main scrollback history.
+_ALT_ENTER = b"\x1b[?1049h"
+_ALT_LEAVE = b"\x1b[?1049l"
+
+
 class PtyProcess(QThread):
     """Runs a command inside a PTY, feeds pyte off the main thread, and emits render signals."""
 
-    data_ready       = Signal(bytes)   # raw bytes — for escape-sequence detection in PtyWidget
-    screen_ready     = Signal(object)  # set of dirty row indices — triggers canvas repaint
-    process_finished = Signal(int)     # exit code
+    data_ready         = Signal(bytes)   # raw bytes — for escape-sequence detection in PtyWidget
+    screen_ready       = Signal(object)  # set of dirty row indices — triggers canvas repaint
+    process_finished   = Signal(int)     # exit code
+    alt_screen_changed = Signal(bool)    # True = entered alt screen, False = left alt screen
 
     def __init__(
         self,
@@ -45,10 +54,18 @@ class PtyProcess(QThread):
         self._master_fd = -1
         self._proc: subprocess.Popen | None = None
 
-        # pyte screen owned by PtyProcess; protected by _lock for cross-thread access
-        self._lock   = QMutex()
-        self._screen = pyte.HistoryScreen(cols, rows, history=scrollback, ratio=1.0)
-        self._stream = pyte.ByteStream(self._screen)
+        # Two pyte buffers: main buffer keeps scrollback history; alt buffer is
+        # for full-screen TUI apps and is discarded when they exit.
+        self._lock        = QMutex()
+        self._screen_main = pyte.HistoryScreen(cols, rows, history=scrollback, ratio=1.0)
+        self._screen_alt  = pyte.Screen(cols, rows)
+        self._stream_main = pyte.ByteStream(self._screen_main)
+        self._stream_alt  = pyte.ByteStream(self._screen_alt)
+
+        # _screen / _stream always point to the active buffer (swapped on 1049 sequences).
+        self._in_alt_screen = False
+        self._screen = self._screen_main
+        self._stream = self._stream_main
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -97,7 +114,9 @@ class PtyProcess(QThread):
         self._rows, self._cols = rows, cols
         self._lock.lock()
         try:
-            self._screen.resize(rows, cols)
+            # Resize both buffers so dimensions stay in sync regardless of which is active.
+            self._screen_main.resize(rows, cols)
+            self._screen_alt.resize(rows, cols)
         finally:
             self._lock.unlock()
         if self._master_fd >= 0:
@@ -123,16 +142,9 @@ class PtyProcess(QThread):
                 if r:
                     data = os.read(self._master_fd, 65536)
                     if data:
-                        # feed pyte off the main thread; protect screen with lock
-                        self._lock.lock()
-                        try:
-                            self._stream.feed(data)
-                            dirty = set(self._screen.dirty)
-                            self._screen.dirty.clear()
-                        finally:
-                            self._lock.unlock()
-                        self.data_ready.emit(data)       # raw bytes for mode detection
-                        self.screen_ready.emit(dirty)    # dirty rows for partial repaint
+                        dirty = self._route_and_feed(data)
+                        self.data_ready.emit(data)
+                        self.screen_ready.emit(dirty)
             except OSError:
                 break
 
@@ -143,6 +155,71 @@ class PtyProcess(QThread):
             pass
         self._master_fd = -1
         self.process_finished.emit(exit_code)
+
+    # ── alt-screen routing ────────────────────────────────────────────────────
+
+    def _route_and_feed(self, data: bytes) -> set:
+        """Feed *data* to the correct pyte stream, splitting at ESC[?1049h/l.
+
+        Returns the combined set of dirty row indices for the active screen.
+        Emits alt_screen_changed when the active buffer switches.
+        """
+        dirty = set()
+        pos   = 0
+        n     = len(data)
+
+        while pos < n:
+            ei = data.find(_ALT_ENTER, pos)
+            li = data.find(_ALT_LEAVE, pos)
+
+            if ei == -1 and li == -1:
+                dirty |= self._feed_active(data[pos:])
+                break
+
+            # Pick the earliest switch sequence.
+            if ei == -1:
+                sw, sw_len, entering = li, len(_ALT_LEAVE), False
+            elif li == -1:
+                sw, sw_len, entering = ei, len(_ALT_ENTER), True
+            elif ei < li:
+                sw, sw_len, entering = ei, len(_ALT_ENTER), True
+            else:
+                sw, sw_len, entering = li, len(_ALT_LEAVE), False
+
+            # Feed everything that comes before the switch sequence.
+            if sw > pos:
+                dirty |= self._feed_active(data[pos:sw])
+
+            # Perform the buffer swap.
+            if entering and not self._in_alt_screen:
+                self._in_alt_screen = True
+                self._screen_alt.reset()
+                self._screen_alt.resize(self._rows, self._cols)
+                self._screen = self._screen_alt
+                self._stream = self._stream_alt
+                self.alt_screen_changed.emit(True)
+            elif not entering and self._in_alt_screen:
+                self._in_alt_screen = False
+                self._screen = self._screen_main
+                self._stream = self._stream_main
+                self.alt_screen_changed.emit(False)
+
+            pos = sw + sw_len
+
+        return dirty
+
+    def _feed_active(self, chunk: bytes) -> set:
+        """Feed *chunk* to the active stream under lock; return dirty rows."""
+        if not chunk:
+            return set()
+        self._lock.lock()
+        try:
+            self._stream.feed(chunk)
+            d = set(self._screen.dirty)
+            self._screen.dirty.clear()
+        finally:
+            self._lock.unlock()
+        return d
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
