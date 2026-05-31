@@ -201,10 +201,11 @@ class Spacing:
 
 @dataclass(frozen=True)
 class Radius:
-    sm: int = 6
-    md: int = 8
-    lg: int = 10
-    xl: int = 14
+    sm:  int = 8    # buttons, nav items
+    md:  int = 10   # inputs, tags
+    lg:  int = 14   # dropdowns, autocomplete
+    xl:  int = 18   # modals
+    xxl: int = 22   # featured cards
 
 
 SP = Spacing()

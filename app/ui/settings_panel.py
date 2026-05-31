@@ -30,10 +30,10 @@ def _section_frame(title: str, p: Palette, danger: bool = False) -> tuple[QFrame
     border_color = p.red_ui if danger else p.border
     frame.setStyleSheet(
         f"QFrame {{ background: {p.bg_surface}; border: 1px solid {border_color};"
-        f" border-radius: 12px; }}"
+        f" border-radius: 16px; }}"
     )
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(16, 12, 16, 16)
+    layout.setContentsMargins(18, 14, 18, 18)
     layout.setSpacing(8)
 
     title_color = p.red_ui if danger else p.blue
@@ -68,12 +68,12 @@ def _row_widget(label: str, control: QWidget, p: Palette) -> QWidget:
 
 def _action_btn(text: str, p: Palette, danger: bool = False) -> QPushButton:
     btn = QPushButton(text)
-    btn.setFixedHeight(28)
+    btn.setFixedHeight(32)
     color = p.red_ui if danger else p.blue
     btn.setStyleSheet(
         f"QPushButton {{ background: transparent; color: {color}; border: 1px solid {color};"
-        f" border-radius: 4px; font-size: {TY.md}px; padding: 0 12px; }}"
-        f"QPushButton:hover {{ background: {color}; color: {p.bg}; }}"
+        f" border-radius: 10px; font-size: {TY.md}px; padding: 0 14px; }}"
+        f"QPushButton:hover {{ background: {color}; color: {'#ffffff' if danger else p.bg}; }}"
     )
     return btn
 
@@ -367,21 +367,40 @@ class _DataManagementSection(QWidget):
         dlg.setModal(True)
         dlg.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         dlg.setAttribute(Qt.WA_TranslucentBackground, False)
-        dlg.setFixedWidth(400)
+        dlg.setFixedWidth(440)
         dlg.setStyleSheet(
-            f"QDialog {{ background: {p.bg_surface}; border: 1px solid {p.red_ui};"
-            f" border-radius: 12px; }}"
+            f"QDialog {{ background: {p.bg_surface}; border: 1px solid #2d1f1f;"
+            f" border-radius: 20px; }}"
         )
 
         layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(24, 24, 24, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(28, 28, 28, 24)
+        layout.setSpacing(0)
 
-        title_lbl = QLabel("Confirm action")
+        # Warning icon container
+        icon_row = QHBoxLayout()
+        icon_row.setContentsMargins(0, 0, 0, 0)
+        icon_container = QLabel("⚠")
+        icon_container.setFixedSize(38, 38)
+        icon_container.setAlignment(Qt.AlignCenter)
+        icon_container.setStyleSheet(
+            f"color: #F87171; font-size: 18px; background: rgba(239,68,68,0.12);"
+            f" border-radius: 10px; border: none;"
+        )
+        icon_row.addWidget(icon_container)
+        icon_row.addStretch()
+        layout.addLayout(icon_row)
+        layout.addSpacing(14)
+
+        # Title (derived from action_label)
+        title_text = action_label.replace("Clear ", "Clear ").replace("Delete ", "Delete ")
+        title_lbl = QLabel(title_text + "?")
         title_lbl.setStyleSheet(
-            f"color: {p.fg}; font-size: 15px; font-weight: bold; background: transparent; border: none;"
+            f"color: {p.fg}; font-size: 15px; font-weight: 700;"
+            f" background: transparent; border: none;"
         )
         layout.addWidget(title_lbl)
+        layout.addSpacing(8)
 
         msg_lbl = QLabel(msg)
         msg_lbl.setWordWrap(True)
@@ -390,27 +409,28 @@ class _DataManagementSection(QWidget):
             f" background: transparent; border: none;"
         )
         layout.addWidget(msg_lbl)
-
-        layout.addSpacing(8)
+        layout.addSpacing(24)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(10)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(32)
+        cancel_btn.setFixedHeight(36)
         cancel_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {p.fg_muted}; border: 1px solid {p.border};"
-            f" border-radius: 6px; font-size: 12px; padding: 0 16px; }}"
+            f"QPushButton {{ background: transparent; color: {p.fg_muted};"
+            f" border: 1px solid {p.border}; border-radius: 10px;"
+            f" font-size: 12px; font-weight: 500; padding: 0 18px; }}"
             f"QPushButton:hover {{ background: {p.bg_overlay}; color: {p.fg}; }}"
         )
         cancel_btn.clicked.connect(dlg.reject)
 
         confirm_btn = QPushButton(action_label)
-        confirm_btn.setFixedHeight(32)
+        confirm_btn.setFixedHeight(36)
         confirm_btn.setStyleSheet(
-            f"QPushButton {{ background: {p.red_ui}; color: #ffffff; border: none;"
-            f" border-radius: 6px; font-size: 12px; font-weight: bold; padding: 0 16px; }}"
-            f"QPushButton:hover {{ background: #ef4444; }}"
+            f"QPushButton {{ background: #EF4444; color: #ffffff; border: none;"
+            f" border-radius: 10px; font-size: 12px; font-weight: 600; padding: 0 18px; }}"
+            f"QPushButton:hover {{ background: #DC2626; }}"
+            f"QPushButton:pressed {{ background: #B91C1C; }}"
         )
         confirm_btn.clicked.connect(dlg.accept)
 
@@ -422,35 +442,51 @@ class _DataManagementSection(QWidget):
         from PySide6.QtCore import QPoint
         parent_rect = self.window().rect()
         center = self.window().mapToGlobal(parent_rect.center())
-        dlg.move(center - QPoint(dlg.width() // 2, 80))
+        dlg.move(center - QPoint(dlg.width() // 2, 90))
 
         return dlg.exec() == QDialog.Accepted
 
     def _clear_history(self) -> None:
-        if self._confirm("Delete ALL command history? This cannot be undone.", "Clear history"):
+        if self._confirm(
+            "This will permanently remove all saved terminal commands from your local history. "
+            "This action cannot be undone.",
+            "Clear history"
+        ):
             self._repo.clear_all()
             self._status_lbl.setText("Command history cleared.")
             self.data_cleared.emit()
 
     def _clear_favorites(self) -> None:
-        if self._confirm("Delete ALL favorites? This cannot be undone.", "Clear favorites"):
+        if self._confirm(
+            "This will permanently remove all saved favorite commands and shortcuts. "
+            "This action cannot be undone.",
+            "Clear favorites"
+        ):
             self._fav_repo.clear_all()
             self._status_lbl.setText("Favorites cleared.")
             self.data_cleared.emit()
 
     def _clear_projects(self) -> None:
-        if self._confirm("Delete ALL projects? This cannot be undone.", "Clear projects"):
+        if self._confirm(
+            "This will remove all saved project entries from Blocksh. "
+            "Your project files will not be deleted from disk.",
+            "Clear projects"
+        ):
             self._proj_repo.clear_all()
             self._status_lbl.setText("Projects cleared.")
             self.data_cleared.emit()
 
     def _clear_all(self) -> None:
         if not self._confirm(
-            "Delete all history, favorites, and projects?\n\nThis action cannot be undone.",
+            "This will permanently remove command history, favorites, saved projects, and local app data. "
+            "Your files on disk will not be deleted. This action cannot be undone.",
             "Delete all data"
         ):
             return
-        if not self._confirm("Are you absolutely sure? This is irreversible.", "Yes, delete everything"):
+        if not self._confirm(
+            "Are you absolutely sure? All local Blocksh data will be erased. This is irreversible.",
+            "Yes, delete everything"
+        ):
             return
         self._repo.clear_all()
         self._fav_repo.clear_all()
@@ -1104,11 +1140,11 @@ class SettingsPanel(QWidget):
     def apply_theme(self, p: Palette) -> None:
         normal_style = (
             f"QFrame {{ background: {p.bg_surface}; border: 1px solid {p.border};"
-            f" border-radius: 12px; }}"
+            f" border-radius: 16px; }}"
         )
         danger_style = (
             f"QFrame {{ background: {p.bg_surface}; border: 1px solid {p.red_ui};"
-            f" border-radius: 12px; }}"
+            f" border-radius: 16px; }}"
         )
         # frame4 (index 3) is the Data Management danger zone
         for i, frame in enumerate(self._frames):

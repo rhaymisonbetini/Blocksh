@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QPushButton, QScrollArea, QWidget
 from PySide6.QtCore import Signal, Qt
 
-from .theme import Palette, ThemeManager, get_mono_font, TY
+from .theme import Palette, ThemeManager, get_mono_font, TY, RD
 
 
 class CompletionPopup(QFrame):
@@ -41,7 +41,8 @@ class CompletionPopup(QFrame):
 
     def apply_theme(self, p: Palette) -> None:
         self.setStyleSheet(
-            f"QFrame {{ background: {p.bg_overlay}; border: 1px solid {p.border}; border-radius: 6px; }}"
+            f"QFrame {{ background: #111827; border: 1px solid #243047;"
+            f" border-radius: {RD.lg}px; }}"
         )
         for i, btn in enumerate(self._buttons):
             is_dir = self._items[i].endswith("/")
@@ -63,14 +64,14 @@ class CompletionPopup(QFrame):
         for text, is_dir in items:
             new_items.append(text)
             btn = QPushButton(text)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(30)
             btn.setStyleSheet(self._btn_style(p, is_dir, active=False))
             btn.clicked.connect(lambda checked, t=text: self.item_activated.emit(t))
             new_layout.addWidget(btn)
             new_buttons.append(btn)
 
         vp_w = self._scroll.viewport().width()
-        new_list.resize(vp_w if vp_w > 0 else 200, max(1, len(items)) * 29)
+        new_list.resize(vp_w if vp_w > 0 else 200, max(1, len(items)) * 31)
 
         self._scroll.setWidget(new_list)   # Qt deletes the old list widget
         self._list = new_list
@@ -79,8 +80,8 @@ class CompletionPopup(QFrame):
         self._items = new_items
         self._selected = -1
 
-        row_h = 28
-        self.setFixedHeight(min(200, len(items) * row_h + 8))
+        row_h = 30
+        self.setFixedHeight(min(260, len(items) * row_h + 12))
 
         if self._buttons:
             self._set_selected(0)
@@ -112,9 +113,11 @@ class CompletionPopup(QFrame):
     @staticmethod
     def _btn_style(p: Palette, is_dir: bool, active: bool) -> str:
         color = p.blue if is_dir else p.fg
-        bg = p.bg_selected if active else "transparent"
+        bg = "rgba(59,130,246,0.22)" if active else "transparent"
+        text_color = "#93C5FD" if (active and is_dir) else ("#93C5FD" if active else color)
         return (
-            f"QPushButton {{ background: {bg}; color: {color}; border: none;"
-            f" font-family: {get_mono_font()}; font-size: {TY.sm}px; text-align: left; padding: 0 10px; }}"
-            f"QPushButton:hover {{ background: {p.bg_hover2}; }}"
+            f"QPushButton {{ background: {bg}; color: {text_color}; border: none;"
+            f" border-radius: {RD.md - 1}px;"
+            f" font-family: {get_mono_font()}; font-size: {TY.base}px; text-align: left; padding: 0 10px; }}"
+            f"QPushButton:hover {{ background: rgba(255,255,255,0.05); }}"
         )

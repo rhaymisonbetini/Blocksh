@@ -1,10 +1,10 @@
 import random
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPlainTextEdit, QPushButton, QLabel
 from PySide6.QtCore import Signal, Qt, QRect
 from PySide6.QtGui import QFont, QFontMetrics, QTextCursor
 
-from .theme import Palette, ThemeManager, get_mono_font, TY
+from .theme import Palette, ThemeManager, get_mono_font, TY, RD
 
 _PLACEHOLDERS = [
     "type your command...",
@@ -135,8 +135,19 @@ class InputBar(QWidget):
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 6, 12, 6)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 8, 12, 8)
+        layout.setSpacing(0)
+
+        # Prompt: cwd + $ symbol, inline before the input field
+        self._cwd_lbl = QLabel("~")
+        self._cwd_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self._dollar_lbl = QLabel(" $ ")
+        self._dollar_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        layout.addWidget(self._cwd_lbl)
+        layout.addWidget(self._dollar_lbl)
+        layout.addSpacing(2)
 
         self._input = _HistoryInput()
         self._input.command_submitted.connect(self._submit)
@@ -148,7 +159,7 @@ class InputBar(QWidget):
         self._input.textChanged.connect(self._on_ai_mode_check)
 
         self._ai_btn = QPushButton("✦")
-        self._ai_btn.setFixedSize(38, 38)
+        self._ai_btn.setFixedSize(34, 34)
         self._ai_btn.setToolTip(
             "AI mode — type a request in natural language\n"
             "e.g.  > list all running docker containers\n"
@@ -157,21 +168,39 @@ class InputBar(QWidget):
         self._ai_btn.clicked.connect(self._toggle_ai_prefix)
 
         self._run_btn = QPushButton("▶  Run")
-        self._run_btn.setFixedHeight(42)
-        self._run_btn.setMinimumWidth(110)
+        self._run_btn.setFixedHeight(36)
+        self._run_btn.setMinimumWidth(100)
         self._run_btn.clicked.connect(self._submit)
 
         layout.addWidget(self._input)
-        layout.addWidget(self._ai_btn, 0, Qt.AlignTop)
-        layout.addWidget(self._run_btn, 0, Qt.AlignTop)
+        layout.addSpacing(8)
+        layout.addWidget(self._ai_btn, 0, Qt.AlignVCenter)
+        layout.addSpacing(6)
+        layout.addWidget(self._run_btn, 0, Qt.AlignVCenter)
 
     def apply_theme(self, p: Palette) -> None:
         mono = get_mono_font()
-        ai_mode = self._input.toPlainText().startswith("> ")
+        text = self._input.toPlainText()
+        ai_mode = text.startswith("> ")
+        has_text = bool(text.strip())
+
+        self._cwd_lbl.setStyleSheet(
+            f"color: {p.blue}; font-family: {mono}; font-size: {TY.base}px;"
+            f" background: transparent; font-weight: 500;"
+        )
+        self._dollar_lbl.setStyleSheet(
+            f"color: {p.green}; font-family: {mono}; font-size: {TY.base}px;"
+            f" background: transparent; font-weight: bold;"
+        )
+        self._input.setStyleSheet(
+            f"QPlainTextEdit {{ background: transparent; border: none; color: {p.fg};"
+            f" font-family: {mono}; font-size: {TY.base}px; }}"
+        )
+
         if ai_mode:
             self.setStyleSheet(
                 f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
-                f" border-radius: 8px; }}"
+                f" border-radius: {RD.sm}px; }}"
             )
         else:
             self.setStyleSheet(
@@ -313,7 +342,8 @@ class InputBar(QWidget):
         self._history = commands
 
     def update_cwd(self, display_path: str) -> None:
-        pass
+        if hasattr(self, "_cwd_lbl"):
+            self._cwd_lbl.setText(display_path or "~")
 
     def set_text(self, text: str) -> None:
         self._input.setPlainText(text)
@@ -356,46 +386,64 @@ class InputBar(QWidget):
 
     def _on_ai_mode_check(self) -> None:
         p = ThemeManager.instance().current
-        ai_mode = self._input.toPlainText().startswith("> ")
+        text = self._input.toPlainText()
+        ai_mode = text.startswith("> ")
+        has_text = bool(text.strip())
         if ai_mode:
             self.setStyleSheet(
                 f"QWidget#InputBar {{ background: {p.bg}; border: 1px solid {p.blue};"
-                f" border-radius: 8px; }}"
+                f" border-radius: {RD.sm}px; }}"
             )
         else:
             self.setStyleSheet(
                 f"QWidget#InputBar {{ background: {p.bg}; border: none; border-radius: 0px; }}"
             )
-        self._apply_ai_mode_style(p, ai_mode)
+        self._apply_ai_mode_style(p, ai_mode, has_text)
 
-    def _apply_ai_mode_style(self, p: Palette, ai_mode: bool) -> None:
+    def _apply_ai_mode_style(self, p: Palette, ai_mode: bool, has_text: bool = False) -> None:
         if ai_mode:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 5px; font-size: {TY.xl}px; font-weight: bold; }}"
-                f"QPushButton:hover {{ background: {p.blue}; opacity: 0.85; }}"
+                f" border-radius: {RD.sm}px; font-size: {TY.lg}px; font-weight: bold; }}"
+                f"QPushButton:hover {{ background: #74b0e8; }}"
             )
             self._run_btn.setText("Ask AI →")
             self._run_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.blue}; color: {p.bg}; border: none;"
-                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}px;"
-                f" padding: 0 18px; }}"
+                f" border-radius: {RD.sm}px; font-weight: bold; font-size: {TY.md}px;"
+                f" padding: 0 16px; }}"
                 f"QPushButton:hover {{ background: #74b0e8; }}"
                 f"QPushButton:pressed {{ background: #5a9fd4; }}"
             )
-        else:
+        elif has_text:
             self._ai_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
-                f" border-radius: 5px; font-size: {TY.xl}px; }}"
+                f" border-radius: {RD.sm}px; font-size: {TY.lg}px; }}"
                 f"QPushButton:hover {{ color: {p.blue}; }}"
             )
             self._run_btn.setText("▶  Run")
             self._run_btn.setStyleSheet(
                 f"QPushButton {{ background: {p.accent}; color: {p.accent_fg}; border: none;"
-                f" border-radius: 6px; font-weight: bold; font-size: {TY.lg}px;"
-                f" padding: 0 18px; }}"
+                f" border-radius: {RD.sm}px; font-weight: bold; font-size: {TY.md}px;"
+                f" padding: 0 16px; }}"
                 f"QPushButton:hover {{ background: {p.accent_hover}; }}"
                 f"QPushButton:pressed {{ background: {p.accent_hover}; }}"
+            )
+        else:
+            # Dimmed state — no command typed yet
+            self._ai_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {p.fg_dim}; border: none;"
+                f" border-radius: {RD.sm}px; font-size: {TY.lg}px; }}"
+                f"QPushButton:hover {{ color: {p.blue}; }}"
+            )
+            self._run_btn.setText("▶  Run")
+            self._run_btn.setStyleSheet(
+                f"QPushButton {{ background: rgba(72,202,178,0.15); color: rgba(200,210,220,0.45);"
+                f" border: 1px solid rgba(72,202,178,0.12);"
+                f" border-radius: {RD.sm}px; font-weight: bold; font-size: {TY.md}px;"
+                f" padding: 0 16px; }}"
+                f"QPushButton:hover {{ background: rgba(72,202,178,0.22);"
+                f" color: rgba(200,210,220,0.65); }}"
             )
 
     def focus(self):
