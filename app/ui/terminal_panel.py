@@ -161,6 +161,7 @@ class TerminalPanel(QWidget):
         _tm.theme_changed.connect(self.apply_theme)
         # Show empty state initially (positioned after first paint via QTimer)
         QTimer.singleShot(0, self._show_empty_state)
+        QTimer.singleShot(0, lambda: self._input_bar.update_cwd(self._session.cwd_display()))
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -239,6 +240,7 @@ class TerminalPanel(QWidget):
 
         self._input_bar = InputBar()
         self._input_bar.command_submitted.connect(self._on_command)
+        self.cwd_changed.connect(self._input_bar.update_cwd)
         layout.addSpacing(4)
         layout.addWidget(self._input_bar)
         layout.addSpacing(4)

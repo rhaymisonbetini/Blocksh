@@ -12,7 +12,7 @@ from ..domain.favorite import Favorite
 from ..domain.project import Project
 from ..domain.ssh_connection import SshConnection
 from ..domain.workflow import Workflow
-from .theme import Palette, ThemeManager, get_mono_font, TY
+from .theme import Palette, ThemeManager, get_mono_font, TY, RD
 
 _TYPE_COLORS: dict[str, str] = {
     "git":     "#89b4fa",
@@ -43,16 +43,16 @@ def _username() -> str:
 _NAV_MAIN = [
     (">_", "Terminal",   True),
     ("≡",  "History",    False),
-    ("◇",  "Favorites",  False),
+    ("★",  "Favorites",  False),
     ("⊞",  "Projects",   False),
     ("⌁",  "SSH",        False),
-    ("▶",  "Workflows",  False),
+    ("▷",  "Workflows",  False),
 ]
 
 _NAV_FOOTER = [
     ("⚙",  "Settings",  False),
     ("◑",  "Themes",    False),
-    ("○",  "About",     False),
+    ("ℹ",  "About",     False),
 ]
 
 
@@ -61,7 +61,7 @@ class _NavButton(QPushButton):
         super().__init__(parent)
         self.setCheckable(True)
         self.setChecked(active)
-        self.setFixedHeight(42)
+        self.setFixedHeight(40)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 12, 0)
@@ -69,7 +69,7 @@ class _NavButton(QPushButton):
 
         self._icon_lbl = QLabel(icon)
         self._icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._icon_lbl.setStyleSheet(f"font-size: {TY.md}px; background: transparent; border: none;")
+        self._icon_lbl.setStyleSheet("font-size: 18px; background: transparent; border: none;")
 
         self._text_lbl = QLabel(label)
         self._text_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -84,7 +84,7 @@ class _NavButton(QPushButton):
         lay = self.layout()
         if collapsed:
             lay.setContentsMargins(0, 0, 0, 0)
-            self._icon_lbl.setMinimumWidth(48)
+            self._icon_lbl.setMinimumWidth(54)
             self._icon_lbl.setAlignment(Qt.AlignCenter)
             self.setToolTip(self._text_lbl.text())
         else:
@@ -94,25 +94,26 @@ class _NavButton(QPushButton):
             self.setToolTip("")
 
     def apply_theme(self, p: Palette) -> None:
-        self._icon_lbl.setStyleSheet(f"font-size: {TY.md}px; background: transparent; border: none;")
+        self._icon_lbl.setStyleSheet("font-size: 18px; background: transparent; border: none;")
         self._text_lbl.setStyleSheet(f"font-size: {TY.base}px; background: transparent; border: none;")
         self.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
                 border: none;
-                border-radius: 6px;
-                color: {p.fg_muted};
+                border-radius: {RD.sm}px;
+                color: #94A3B8;
                 text-align: left;
             }}
             QPushButton:checked {{
-                background-color: {p.bg_active};
-                color: {p.fg};
-                border-left: 3px solid {p.blue};
-                border-radius: 0px 6px 6px 0px;
+                background-color: rgba(59, 130, 246, 0.22);
+                color: #93C5FD;
+                border-left: 2px solid #3B82F6;
+                border-radius: 0px {RD.sm}px {RD.sm}px 0px;
             }}
             QPushButton:hover:!checked {{
-                background-color: {p.bg_hover};
-                color: {p.fg};
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #E5E7EB;
+                border-radius: {RD.sm}px;
             }}
         """)
 
@@ -147,7 +148,7 @@ class Sidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(52)
+        self.setFixedWidth(56)
         self._collapsed = True
         self._nav_buttons: list[_NavButton] = []
         self._build_ui()
@@ -757,7 +758,7 @@ class Sidebar(QWidget):
 
     def _set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
-        target_w = 52 if collapsed else 210
+        target_w = 56 if collapsed else 210
 
         for btn in self._nav_buttons:
             btn.set_collapsed(collapsed)
@@ -773,7 +774,7 @@ class Sidebar(QWidget):
             self._info_lbl.setVisible(False)
             self._cwd_label.setVisible(False)
             self._sys_info_widget.setVisible(False)
-            self._anim.finished.connect(lambda: self.setFixedWidth(52))
+            self._anim.finished.connect(lambda: self.setFixedWidth(56))
         else:
             def _on_done():
                 self.setFixedWidth(target_w)

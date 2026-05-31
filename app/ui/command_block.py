@@ -202,7 +202,7 @@ class CommandBlock(QWidget):
         p = ThemeManager.instance().current
         if active:
             self._card.setStyleSheet(
-                f"QFrame {{ background-color: {p.bg_highlight}; border-radius: 8px;"
+                f"QFrame {{ background-color: {p.bg_highlight}; border-radius: 12px;"
                 f" border: 1px solid {p.blue}; }}"
             )
         else:
@@ -260,7 +260,7 @@ class CommandBlock(QWidget):
         if not self._card:
             return
         self._card.setStyleSheet(
-            f"QFrame {{ background-color: {p.bg_surface}; border-radius: 8px; border: none; }}"
+            f"QFrame {{ background-color: {p.bg_surface}; border-radius: 12px; border: none; }}"
         )
 
     def apply_theme(self, p: Palette) -> None:
