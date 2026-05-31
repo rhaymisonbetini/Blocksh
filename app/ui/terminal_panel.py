@@ -507,8 +507,11 @@ class TerminalPanel(QWidget):
     def _on_input_text_changed(self, _text: str):
         base, path_prefix, name_prefix = self._input_bar.get_completion_context()
 
-        # Need at least 1 char of the filename being typed to show suggestions
-        if not name_prefix and not path_prefix:
+        # Live completion requires at least 1 char of the actual filename (name_prefix).
+        # Without this guard, typing just "/" triggers os.scandir("/") which scans the
+        # entire root filesystem, blocking the event loop and deforming the layout (#108).
+        # Tab-triggered completion (_trigger_completion) is not subject to this limit.
+        if not name_prefix:
             self._close_completion()
             self._completion_timer.stop()
             return
@@ -521,7 +524,7 @@ class TerminalPanel(QWidget):
     def _run_completion(self) -> None:
         """Executes the actual completion search — called 100ms after last keystroke."""
         base, path_prefix, name_prefix = self._completion_context
-        if not name_prefix and not path_prefix:
+        if not name_prefix:
             self._close_completion()
             return
 
