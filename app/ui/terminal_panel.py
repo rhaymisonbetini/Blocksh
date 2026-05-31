@@ -436,6 +436,9 @@ class TerminalPanel(QWidget):
 
     def _destroy_pty(self, exit_code: int, final_text: str) -> None:
         if self._pty_widget:
+            # Disconnect PtyProcess signals before deleteLater() so the PTY thread
+            # cannot emit into a dead widget after destruction (#107).
+            self._pty_widget._disconnect_process_signals()
             self._pty_widget.hide()
             self._pty_widget.deleteLater()
             self._pty_widget = None

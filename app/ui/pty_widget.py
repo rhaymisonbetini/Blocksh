@@ -36,6 +36,8 @@ _KEY_MAP: dict[int, bytes] = {
     Qt.Key_PageUp:    b"\x1b[5~",
     Qt.Key_PageDown:  b"\x1b[6~",
     Qt.Key_Tab:       b"\t",
+    # Qt generates Key_Backtab for Shift+Tab; the ANSI sequence is CSI Z (\x1b[Z)
+    Qt.Key_Backtab:   b"\x1b[Z",
     Qt.Key_Escape:    b"\x1b",
     Qt.Key_F1:        b"\x1bOP",
     Qt.Key_F2:        b"\x1bOQ",
@@ -49,6 +51,8 @@ _KEY_MAP: dict[int, bytes] = {
     Qt.Key_F10:       b"\x1b[21~",
     Qt.Key_F11:       b"\x1b[23~",
     Qt.Key_F12:       b"\x1b[24~",
+    # Insert key (used by some TUI apps)
+    Qt.Key_Insert:    b"\x1b[2~",
 }
 
 # SS3 sequences used when DECCKM (application cursor keys) is active
@@ -315,8 +319,28 @@ class PtyWidget(QWidget):
         h = max(1, self._canvas.height() or self.height())
         return max(5, h // self._char_h), max(10, w // self._char_w)
 
+    def _disconnect_process_signals(self) -> None:
+        """Sever all signal connections from PtyProcess before the widget is destroyed.
+
+        Without this, if the PTY thread emits data_ready or screen_ready after
+        deleteLater() has been called, Qt tries to invoke slots on a dead object
+        which causes a segfault or assertion failure.
+        """
+        if self._process is None:
+            return
+        for sig in (
+            self._process.data_ready,
+            self._process.screen_ready,
+            self._process.process_finished,
+        ):
+            try:
+                sig.disconnect()
+            except RuntimeError:
+                pass  # already disconnected
+
     def _kill_process(self) -> None:
         if self._process:
+            self._disconnect_process_signals()
             self._process.terminate()
             self._process.wait(2000)
 
