@@ -202,13 +202,41 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+W"), self).activated.connect(
             lambda: self._close_tab(self._active_index)
         )
-        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search)
-        QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._clear_active)
-        QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._toggle_palette)
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._shortcut_search)
+        QShortcut(QKeySequence("Ctrl+L"), self).activated.connect(self._shortcut_clear)
+        QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._shortcut_palette)
         QShortcut(QKeySequence("Escape"), self).activated.connect(self._esc_settings)
         QShortcut(QKeySequence("Ctrl+Shift+\\"), self).activated.connect(self._split_h)
         QShortcut(QKeySequence("Ctrl+Shift+-"), self).activated.connect(self._split_v)
         QShortcut(QKeySequence("Ctrl+Shift+W"), self).activated.connect(self._close_pane)
+
+    # ── PTY-aware shortcut helpers (#104) ─────────────────────────────────────
+
+    def _active_panel_has_pty(self) -> bool:
+        """Return True when the current active terminal panel has a running PTY."""
+        if not self._panels:
+            return False
+        panel = self._panels[self._active_index]._active
+        return panel is not None and panel._pty_widget is not None
+
+    def _shortcut_search(self) -> None:
+        """Ctrl+F: open search bar, but only when no PTY session is active."""
+        if not self._active_panel_has_pty():
+            self._toggle_search()
+
+    def _shortcut_clear(self) -> None:
+        """Ctrl+L: clear terminal blocks; inside a PTY session forward as clear-screen."""
+        if self._active_panel_has_pty():
+            panel = self._panels[self._active_index]._active
+            if panel and panel._pty_widget and panel._pty_widget._process:
+                panel._pty_widget._process.write(b"\x0c")   # form feed = clear screen
+        else:
+            self._clear_active()
+
+    def _shortcut_palette(self) -> None:
+        """Ctrl+P: open command palette, but only when no PTY session is active."""
+        if not self._active_panel_has_pty():
+            self._toggle_palette()
 
     # ── settings navigation ───────────────────────────────────────────────────
 
