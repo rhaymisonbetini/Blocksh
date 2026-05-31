@@ -271,9 +271,12 @@ class PtyWidget(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         if self._process is None:
-            # #45: defer by one event-loop cycle so Qt finishes layout before we calculate
-            # the initial terminal dimensions (avoids 10-col 5-row default)
+            # Defer PTY startup by one cycle so Qt finalises the widget geometry
+            # before we calculate rows/cols and request keyboard focus (#103, #45).
             QTimer.singleShot(0, self._start_pty)
+        # Explicitly claim focus when the widget becomes visible so the user
+        # can type immediately without needing to click.
+        QTimer.singleShot(0, lambda: self.setFocus(Qt.OtherFocusReason))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
