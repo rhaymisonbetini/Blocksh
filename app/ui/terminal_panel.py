@@ -144,12 +144,13 @@ class TerminalPanel(QWidget):
 
         self._match_blocks:    list[CommandBlock] = []
         self._match_index:     int = 0
-        self._pty_widget:      PtyWidget | None = None
-        self._active_cmd:      Command   | None = None
-        self._running_thread:  CommandThread | None = None
-        self._ai_workers:      list = []
-        self._agent_worker     = None   # current AgentWorker (if running)
-        self._agent_session    = None   # persistent AgentSession (one per tab)
+        self._pty_widget:        PtyWidget | None = None
+        self._active_cmd:        Command   | None = None
+        self._running_thread:    CommandThread | None = None
+        self._ai_workers:        list = []
+        self._agent_worker       = None   # current AgentWorker (if running)
+        self._agent_session      = None   # persistent AgentSession (one per tab)
+        self._ai_panel_was_open: bool = False  # remembers AI panel state across PTY session
 
         self._build_ui()
         self._wire_completion()
@@ -401,6 +402,13 @@ class TerminalPanel(QWidget):
         self._empty_state.setVisible(False)
         self._permission_banner.setVisible(False)
 
+        # If the AI panel overlay is open, close it before the PTY takes over.
+        # Without this, when PtyWidget is destroyed after the session ends, the
+        # AI panel is exposed again — giving the illusion it "reopened" by itself.
+        self._ai_panel_was_open = self._ai_panel.isVisible()
+        if self._ai_panel_was_open:
+            self._ai_panel.hide()
+
         self._pty_widget = PtyWidget(
             text, self._session.cwd, self._session.env, parent=self, direct=direct
         )
@@ -436,6 +444,9 @@ class TerminalPanel(QWidget):
         self._sep.setVisible(False)
         self._input_wrapper.setVisible(True)
         self._permission_banner.setVisible(True)
+        # AI panel is intentionally NOT restored here — the PTY session is over
+        # and the user should return to the normal terminal view.
+        self._ai_panel_was_open = False
         self._input_bar.focus()
 
         if self._active_cmd:
