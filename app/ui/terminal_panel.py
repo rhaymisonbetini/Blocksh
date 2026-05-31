@@ -224,7 +224,7 @@ class TerminalPanel(QWidget):
         self._scroll.verticalScrollBar().rangeChanged.connect(
             lambda _min, maximum: self._scroll.verticalScrollBar().setValue(maximum)
         )
-        layout.addWidget(self._scroll)
+        layout.addWidget(self._scroll, 1)  # stretch=1: takes all available vertical space
 
         self._empty_state = _EmptyState(self)
         self._empty_state.set_run_callback(self._on_command)
@@ -516,18 +516,18 @@ class TerminalPanel(QWidget):
         self._input_bar.set_popup_open(False)
 
     def _position_completion_popup(self):
-        # Anchor popup just above the input wrapper.
-        # Use wrapper geometry for y (input_bar.y() == 0 inside wrapper).
-        # Use wrapper width minus its horizontal margins for popup width.
+        # Anchor popup just above the input bar.
+        # Derive y from the panel's bottom instead of wrapper.y(), which can
+        # be stale if the scroll area layout hasn't settled yet.
         field_rect = self._input_bar.input_field_rect()
         field_origin = self._input_bar.mapTo(self, QPoint(field_rect.x(), 0))
 
-        popup_h = self._completion_popup.height()
-        # Match the visual width of the InputBar card (wrapper - 12px each side)
+        popup_h = self._completion_popup.minimumHeight()
         popup_w = max(220, self._input_wrapper.width() - 24)
 
         x = field_origin.x()
-        y = self._input_wrapper.y() - popup_h - 4
+        # bottom-up: panel_height - bottom_spacing(10) - wrapper_height - gap(4) - popup_height
+        y = self.height() - 10 - self._input_wrapper.height() - 4 - popup_h
 
         self._completion_popup.setFixedWidth(popup_w)
         self._completion_popup.move(x, y)
