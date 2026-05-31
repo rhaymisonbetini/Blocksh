@@ -11,11 +11,13 @@ def _color_env(env: dict | None) -> dict:
     base = env if env is not None else os.environ.copy()
     return {
         **base,
-        "TERM":           "xterm-256color",
-        "COLORTERM":      "truecolor",
-        "FORCE_COLOR":    "1",
-        "CLICOLOR_FORCE": "1",
-        "CLICOLOR":       "1",
+        "TERM":                   "xterm-256color",
+        "COLORTERM":              "truecolor",
+        "FORCE_COLOR":            "1",
+        "CLICOLOR_FORCE":         "1",
+        "CLICOLOR":               "1",
+        # git ≥ 2.31: force color output even without a real TTY
+        "GIT_CONFIG_PARAMETERS":  "'color.ui=always'",
     }
 
 

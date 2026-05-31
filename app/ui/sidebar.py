@@ -589,7 +589,7 @@ class Sidebar(QWidget):
         )
         layout.addWidget(logo_lbl)
 
-        version_lbl = QLabel("v0.9.0")
+        version_lbl = QLabel("v1.1.5")
         version_lbl.setAlignment(Qt.AlignCenter)
         version_lbl.setStyleSheet(
             f"color: {p.accent}; font-size: {TY.md}px; background: transparent;"

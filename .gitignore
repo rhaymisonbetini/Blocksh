@@ -119,3 +119,6 @@ pip-selfcheck.json
 packaging/.tools/
 demo/
 blocksh_terminal_agents_engineering_diagnosis_tasks.md
+blocksh_fix_interactive_agent_tab_sidebar_exit_state.md
+blocksh_critical_terminal_resize_scroll_rendering_analysis.md
+blocksh_terminal_cwd_ansi_links_issue_battery.md

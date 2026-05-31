@@ -1,12 +1,13 @@
 import pyte
-from PySide6.QtCore import Qt, QMutex, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPainter
+from PySide6.QtCore import Qt, QMutex, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontMetrics, QKeyEvent, QPainter
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QScrollBar, QSizePolicy, QVBoxLayout, QWidget
 
 from ..core.pty_process import PtyProcess
 from ..services.settings_service import SettingsService
 from ..domain.settings import AppSettings
 from .ansi_colors import _NAMED, _256_to_hex, _resolve_color
+from .ansi_renderer import _URL_RE
 from .theme import Palette, ThemeManager
 
 _DEFAULT_FG = "#cdd6f4"
@@ -88,6 +89,7 @@ class _PtyCanvas(QWidget):
         self._screen: pyte.Screen | None = None
         self._lock:   QMutex | None = None
         self._scroll_offset: int = 0
+        self._url_regions: list[tuple[int, int, int, str]] = []  # (row, col_start, col_end, url)
 
         p = ThemeManager.instance().current
         self._color_bg        = QColor(p.pty_bg)
@@ -105,6 +107,19 @@ class _PtyCanvas(QWidget):
     def set_scroll_offset(self, offset: int) -> None:
         self._scroll_offset = offset
         self.update()
+
+    def update_url_regions(self, screen) -> None:
+        """Scan the live screen buffer for clickable URLs (row, col_start, col_end, url)."""
+        self._url_regions = []
+        if screen is None:
+            return
+        for row_idx in range(screen.lines):
+            row = screen.buffer[row_idx]
+            line_text = "".join(row[col].data or " " for col in range(screen.columns))
+            for m in _URL_RE.finditer(line_text):
+                url = m.group().rstrip(".,;:!?)]}")
+                if url:
+                    self._url_regions.append((row_idx, m.start(), m.start() + len(url), url))
 
     def apply_theme(self, p: Palette) -> None:
         self._color_bg        = QColor(p.pty_bg)
@@ -145,6 +160,7 @@ class _PtyCanvas(QWidget):
             ch      = self._char_h
             ascent  = self._ascent
             painter = QPainter(self)
+            painter.fillRect(self.rect(), self._color_bg)
 
             for y in range(self._screen.lines):
                 py = y * ch
@@ -239,16 +255,33 @@ class PtyWidget(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._apply_resize)
+
+        self._at_bottom = True
+
+        # Two-stage post-resize render suppression:
+        # settle_timer fires 150ms after the last screen_ready chunk (output stopped).
+        # max_timer fires after 500ms regardless — prevents freeze on continuous output.
+        # All screen_ready signals are blocked while _in_post_resize is True.
+        self._in_post_resize = False
+        self._post_resize_settle_timer = QTimer(self)
+        self._post_resize_settle_timer.setSingleShot(True)
+        self._post_resize_settle_timer.timeout.connect(self._render_after_resize)
+        self._post_resize_max_timer = QTimer(self)
+        self._post_resize_max_timer.setSingleShot(True)
+        self._post_resize_max_timer.timeout.connect(self._render_after_resize)
+
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+        SettingsService.instance().settings_changed.connect(self._on_settings_changed)
+
     def focusNextPrevChild(self, _next: bool) -> bool:
         # Prevent Qt from consuming Tab/Shift+Tab for UI focus navigation.
         # Without this override, Qt intercepts Tab in focusNextPrevChild()
         # *before* keyPressEvent() runs — so _KEY_MAP never sees it and the
         # byte never reaches the PTY process.  Same pattern used by _HistoryInput.
         return False
-
-        _tm = ThemeManager.instance()
-        _tm.theme_changed.connect(self._on_theme_changed)
-        SettingsService.instance().settings_changed.connect(self._on_settings_changed)
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -287,9 +320,24 @@ class PtyWidget(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._process:
-            rows, cols = self._calc_dimensions()
-            self._process.resize(rows, cols)  # resize() now locks internally
+        self._resize_timer.start(80)
+
+    def _apply_resize(self) -> None:
+        rows, cols = self._calc_dimensions()
+        if self._process and (rows != self._process._rows or cols != self._process._cols):
+            self._process.resize(rows, cols)
+            self._in_post_resize = True
+            self._post_resize_settle_timer.start(150)
+            self._post_resize_max_timer.start(500)
+        self._canvas.update()
+
+    def _render_after_resize(self) -> None:
+        """Render once when post-resize output settles (or max wait expires)."""
+        self._post_resize_settle_timer.stop()
+        self._post_resize_max_timer.stop()
+        self._in_post_resize = False
+        self._render_pending = False
+        self._render()
 
     def closeEvent(self, event) -> None:
         self._kill_process()
@@ -319,6 +367,7 @@ class PtyWidget(QWidget):
         self._process.data_ready.connect(self._on_data)
         self._process.screen_ready.connect(self._on_screen_ready)
         self._process.process_finished.connect(self._on_process_finished)
+        self._process.alt_screen_changed.connect(self._on_alt_screen_changed)
         self._process.start_process()
         # Force immediate render so the user sees the terminal background
         # and cursor right away, rather than a black frame until first data arrives.
@@ -342,6 +391,7 @@ class PtyWidget(QWidget):
             self._process.data_ready,
             self._process.screen_ready,
             self._process.process_finished,
+            self._process.alt_screen_changed,
         ):
             try:
                 sig.disconnect()
@@ -353,6 +403,21 @@ class PtyWidget(QWidget):
             self._disconnect_process_signals()
             self._process.terminate()
             self._process.wait(2000)
+
+    def _on_alt_screen_changed(self, entered: bool) -> None:
+        """Swap the canvas to the newly active pyte screen after a 1049 switch."""
+        if not self._process:
+            return
+        self._canvas.set_screen(self._process._screen, self._process._lock)
+        if entered:
+            # Alt screen has no scrollback — hide the scrollbar immediately.
+            self._scrollbar.setValue(0)
+            self._scrollbar.hide()
+            self._at_bottom = True
+        else:
+            # Returned to main screen — refresh scrollbar from main history.
+            self._render_pending = False
+            self._render()
 
     # ── data → render ─────────────────────────────────────────────────────────
 
@@ -378,6 +443,12 @@ class PtyWidget(QWidget):
 
     def _on_screen_ready(self, dirty: set) -> None:
         """Called after PtyProcess has fed pyte in its thread; schedule repaint."""
+        if self._in_post_resize:
+            # Restart the settle window on every new chunk: render fires 150ms
+            # after output stops, preventing any intermediate redraw frame from
+            # being shown (the "scroll through history" visual effect).
+            self._post_resize_settle_timer.start(150)
+            return
         if not self._render_pending:
             self._render_pending = True
             QTimer.singleShot(33, self._render)
@@ -387,23 +458,30 @@ class PtyWidget(QWidget):
         if self._process is None:
             return
         screen = self._process._screen
-        H = len(screen.history.top)
+        self._canvas.update_url_regions(screen)
+        # pyte.Screen (alt buffer) has no .history; HistoryScreen (main buffer) does.
+        H = len(screen.history.top) if hasattr(screen, "history") else 0
         if H > 0:
             self._scrollbar.setMaximum(H)
             self._scrollbar.setPageStep(screen.lines)
             self._scrollbar.show()
+            if self._at_bottom and self._scrollbar.value() != 0:
+                self._scrollbar.setValue(0)
         else:
+            if self._scrollbar.value() != 0:
+                self._scrollbar.setValue(0)
             self._scrollbar.hide()
         self._canvas.update()
 
     # ── scroll ────────────────────────────────────────────────────────────────
 
     def _on_scroll(self, value: int) -> None:
+        self._at_bottom = (value == 0)
         self._canvas.set_scroll_offset(value)
 
     def wheelEvent(self, event) -> None:
         if self._scrollbar.isVisible():
-            delta = -3 if event.angleDelta().y() > 0 else 3
+            delta = 3 if event.angleDelta().y() > 0 else -3
             self._scrollbar.setValue(self._scrollbar.value() + delta)
         else:
             super().wheelEvent(event)
@@ -420,6 +498,15 @@ class PtyWidget(QWidget):
             self.setFocus()
             btn = {Qt.LeftButton: 0, Qt.MiddleButton: 1, Qt.RightButton: 2}.get(event.button(), 3)
             self._send_mouse(btn, int(event.position().x()), int(event.position().y()))
+        elif (event.button() == Qt.LeftButton
+              and self._scrollbar.value() == 0
+              and self._canvas._url_regions):
+            col = int(event.position().x()) // self._char_w
+            row = int(event.position().y()) // self._char_h
+            for r, cs, ce, url in self._canvas._url_regions:
+                if r == row and cs <= col < ce:
+                    QDesktopServices.openUrl(QUrl(url))
+                    return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
@@ -430,6 +517,11 @@ class PtyWidget(QWidget):
     def mouseMoveEvent(self, event) -> None:
         if self._mouse_mode >= 1002 and self._process:
             self._send_mouse(32, int(event.position().x()), int(event.position().y()))
+        elif self._mouse_mode < 1000 and self._scrollbar.value() == 0 and self._canvas._url_regions:
+            col = int(event.position().x()) // self._char_w
+            row = int(event.position().y()) // self._char_h
+            on_link = any(r == row and cs <= col < ce for r, cs, ce, _ in self._canvas._url_regions)
+            self._canvas.setCursor(Qt.PointingHandCursor if on_link else Qt.IBeamCursor)
         super().mouseMoveEvent(event)
 
     # ── keyboard → PTY ────────────────────────────────────────────────────────
@@ -527,19 +619,23 @@ class PtyWidget(QWidget):
             self._canvas.update()
 
     def _on_process_finished(self, exit_code: int) -> None:
-        screen = self._process._screen if self._process else None
+        # If the app exited while in alt screen (without sending ESC[?1049l),
+        # restore the main screen so history and scrollback are visible again.
+        if self._process and self._process._in_alt_screen:
+            self._process._in_alt_screen = False
+            self._process._screen = self._process._screen_main
+            self._process._stream = self._process._stream_main
+            self._canvas.set_screen(self._process._screen_main, self._process._lock)
 
-        if screen and self._process:
-            # force restore of main screen buffer if the app exited without ESC[?1049l
-            # PTY thread is done at this point so no lock needed
-            self._process._stream.feed(b"\x1b[?1049l")
+        screen = self._process._screen if self._process else None
         self._render_pending = False
         self._canvas.update()
 
         if screen:
+            hist_top = list(screen.history.top) if hasattr(screen, "history") else []
             hist_lines = [
                 "".join(row[x].data or " " for x in range(screen.columns)).rstrip()
-                for row in list(screen.history.top)
+                for row in hist_top
             ]
             curr_lines = [
                 "".join(

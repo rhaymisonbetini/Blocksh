@@ -107,6 +107,7 @@ class SplitPaneContainer(QWidget):
         executor: BaseExecutor,
         repository: HistoryRepository,
         parent=None,
+        initial_cwd: str | None = None,
     ):
         super().__init__(parent)
         self._executor   = executor
@@ -122,7 +123,7 @@ class SplitPaneContainer(QWidget):
         self._root_splitter.setChildrenCollapsible(False)
         layout.addWidget(self._root_splitter)
 
-        first_wrapper = self._make_pane()
+        first_wrapper = self._make_pane(cwd=initial_cwd)
         self._root_splitter.addWidget(first_wrapper)
         self._set_active(first_wrapper.panel)
         self._update_headers()
@@ -133,8 +134,8 @@ class SplitPaneContainer(QWidget):
 
     # ── pane factory ─────────────────────────────────────────────────────────
 
-    def _make_pane(self) -> _PaneWrapper:
-        panel = TerminalPanel(self._executor, self._repository)
+    def _make_pane(self, cwd: str | None = None) -> _PaneWrapper:
+        panel = TerminalPanel(self._executor, self._repository, initial_cwd=cwd)
         panel.cwd_changed.connect(lambda cwd, p=panel: self._on_panel_cwd(cwd, p))
         panel.favorite_requested.connect(self.favorite_requested)
         panel.env_file_detected.connect(self.env_file_detected)
@@ -245,7 +246,8 @@ class SplitPaneContainer(QWidget):
         if parent_splitter is None:
             return
 
-        new_wrapper = self._make_pane()
+        active_cwd = self._active._session.cwd if self._active else None
+        new_wrapper = self._make_pane(cwd=active_cwd)
 
         if parent_splitter.orientation() == orientation:
             parent_splitter.insertWidget(idx + 1, new_wrapper)
