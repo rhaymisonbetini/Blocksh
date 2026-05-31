@@ -62,6 +62,10 @@ class _NavButton(QPushButton):
         self.setCheckable(True)
         self.setChecked(active)
         self.setFixedHeight(40)
+        # Sidebar nav buttons must never enter the Tab-focus cycle.
+        # Default QPushButton policy is StrongFocus, which lets Tab reach the
+        # sidebar and accidentally trigger _expand_to() via keyboard navigation.
+        self.setFocusPolicy(Qt.NoFocus)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 0, 12, 0)
@@ -150,6 +154,9 @@ class Sidebar(QWidget):
         super().__init__(parent)
         self.setObjectName("SidebarPanel")
         self.setAttribute(Qt.WA_StyledBackground, True)
+        # Sidebar container must not receive keyboard focus — Tab should never
+        # navigate into the sidebar while the terminal or PTY is active.
+        self.setFocusPolicy(Qt.NoFocus)
         self.setFixedWidth(56)
         self._collapsed = True
         self._nav_buttons: list[_NavButton] = []

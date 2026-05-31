@@ -239,6 +239,13 @@ class PtyWidget(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
+    def focusNextPrevChild(self, _next: bool) -> bool:
+        # Prevent Qt from consuming Tab/Shift+Tab for UI focus navigation.
+        # Without this override, Qt intercepts Tab in focusNextPrevChild()
+        # *before* keyPressEvent() runs — so _KEY_MAP never sees it and the
+        # byte never reaches the PTY process.  Same pattern used by _HistoryInput.
+        return False
+
         _tm = ThemeManager.instance()
         _tm.theme_changed.connect(self._on_theme_changed)
         SettingsService.instance().settings_changed.connect(self._on_settings_changed)
