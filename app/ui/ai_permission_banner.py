@@ -24,6 +24,14 @@ class AiPermissionBanner(QWidget):
         _tm = ThemeManager.instance()
         self.apply_theme(_tm.current)
         _tm.theme_changed.connect(self.apply_theme)
+        # Hide child widgets individually before hiding the root widget.
+        # Without this, setVisible(True) on the root later exposes all children
+        # simultaneously — causing "Your answer… [Send] [Allow] [Deny]" to appear
+        # with garbage state after _destroy_pty restores the banner (#118).
+        self._answer_input.hide()
+        self._send_btn.hide()
+        self._allow_btn.hide()
+        self._deny_btn.hide()
         self.hide()
 
     def _build_ui(self) -> None:
