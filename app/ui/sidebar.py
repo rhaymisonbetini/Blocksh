@@ -148,6 +148,8 @@ class Sidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("SidebarPanel")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedWidth(56)
         self._collapsed = True
         self._nav_buttons: list[_NavButton] = []
@@ -707,7 +709,11 @@ class Sidebar(QWidget):
     # ── theme application ─────────────────────────────────────────────────────
 
     def apply_theme(self, p: Palette) -> None:
-        self.setStyleSheet(f"QWidget {{ background-color: {p.bg_panel}; }}")
+        self.setStyleSheet(
+            f"QWidget#SidebarPanel {{ background-color: {p.bg_panel};"
+            f" border-top-right-radius: 16px; border-bottom-right-radius: 16px; }}"
+            f" QWidget {{ background: transparent; }}"
+        )
         sep_style = f"QFrame {{ color: {p.bg_overlay}; background: {p.bg_overlay}; max-height: 1px; }}"
         self._nav_sep.setStyleSheet(sep_style)
         self._hist_sep.setStyleSheet(sep_style)
