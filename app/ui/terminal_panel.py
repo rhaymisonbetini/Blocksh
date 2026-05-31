@@ -517,7 +517,9 @@ class TerminalPanel(QWidget):
         self._input_bar.set_popup_open(False)
 
     def _position_completion_popup(self):
-        # Map the input field's top-left corner into TerminalPanel coordinates
+        # Map the input field's top-left corner into TerminalPanel coordinates.
+        # input_bar lives inside input_wrapper, so use mapTo for correct origin
+        # and input_wrapper.y() for the vertical anchor (input_bar.y() is 0 inside wrapper).
         field_rect = self._input_bar.input_field_rect()
         field_origin = self._input_bar.mapTo(self, QPoint(field_rect.x(), 0))
 
@@ -525,7 +527,7 @@ class TerminalPanel(QWidget):
         popup_w = max(220, field_rect.width())
 
         x = field_origin.x()
-        y = self._input_bar.y() - popup_h - 4
+        y = self._input_wrapper.y() - popup_h - 4
 
         self._completion_popup.setFixedWidth(popup_w)
         self._completion_popup.move(x, y)
