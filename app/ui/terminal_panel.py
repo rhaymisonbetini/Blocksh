@@ -152,6 +152,15 @@ class TerminalPanel(QWidget):
         self._agent_session      = None   # persistent AgentSession (one per tab)
         self._ai_panel_was_open: bool = False  # remembers AI panel state across PTY session
 
+        # Completion debounce: avoid filesystem I/O on every keystroke (#105)
+        self._completion_timer = QTimer(self)
+        self._completion_timer.setSingleShot(True)
+        self._completion_timer.setInterval(100)   # 100ms debounce
+        self._completion_timer.timeout.connect(self._run_completion)
+        self._completion_context: tuple[str, str, str] = ("", "", "")
+        # Cache: skip scandir if the same directory was scanned recently (#105)
+        self._dir_cache: tuple[str, list] | None = None   # (path, entries)
+
         self._build_ui()
         self._wire_completion()
         self._scroll.installEventFilter(self)
@@ -301,6 +310,7 @@ class TerminalPanel(QWidget):
             self._history.add(block)
             self._add_block(block)
             self._input_bar.update_history(self._history.commands())
+            self._dir_cache = None  # invalidate after cd so next completion scans new cwd
             self.cwd_changed.emit(self._session.cwd_display())
             self._check_env_files()
         elif self._is_interactive(text):
@@ -500,6 +510,19 @@ class TerminalPanel(QWidget):
         # Need at least 1 char of the filename being typed to show suggestions
         if not name_prefix and not path_prefix:
             self._close_completion()
+            self._completion_timer.stop()
+            return
+
+        # Store context and (re)start the debounce timer.
+        # The heavy filesystem + history search only runs when the user pauses.
+        self._completion_context = (base, path_prefix, name_prefix)
+        self._completion_timer.start()
+
+    def _run_completion(self) -> None:
+        """Executes the actual completion search — called 100ms after last keystroke."""
+        base, path_prefix, name_prefix = self._completion_context
+        if not name_prefix and not path_prefix:
+            self._close_completion()
             return
 
         matches = self._get_completions(path_prefix, name_prefix, base)
@@ -561,21 +584,32 @@ class TerminalPanel(QWidget):
         else:
             search_dir = cwd
 
-        matches: list[tuple[str, bool]] = []
-        try:
-            with os.scandir(search_dir) as entries:
-                for entry in entries:
-                    if entry.name.startswith(name_prefix):
-                        is_dir = entry.is_dir()
-                        matches.append((path_prefix + entry.name + ("/" if is_dir else ""), is_dir))
-        except (PermissionError, FileNotFoundError, OSError):
-            pass
+        # Directory cache: avoid repeated scandir calls when the user is typing
+        # characters within the same directory (e.g. typing "ls f", "ls fo", "ls foo").
+        # Cache is invalidated when search_dir changes (#105).
+        if self._dir_cache is not None and self._dir_cache[0] == search_dir:
+            all_entries = self._dir_cache[1]
+        else:
+            all_entries: list[tuple[str, bool]] = []
+            try:
+                with os.scandir(search_dir) as it:
+                    for entry in it:
+                        all_entries.append((entry.name, entry.is_dir()))
+            except (PermissionError, FileNotFoundError, OSError):
+                pass
+            self._dir_cache = (search_dir, all_entries)
+
+        matches: list[tuple[str, bool]] = [
+            (path_prefix + name + ("/" if is_dir else ""), is_dir)
+            for name, is_dir in all_entries
+            if name.startswith(name_prefix)
+        ]
 
         # History-based completions (only when not navigating a path)
         if not path_prefix:
             full_typed = base + name_prefix
             seen = {m[0] for m in matches}
-            for cmd in self._history.commands()[-200:]:
+            for cmd in self._history.commands()[-50:]:   # limit to 50 most recent
                 if cmd.startswith(full_typed) and cmd != full_typed:
                     suffix = cmd[len(base):]
                     if suffix not in seen:
