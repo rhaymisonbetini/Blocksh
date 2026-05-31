@@ -78,6 +78,13 @@ def main():
 
     SettingsService.instance()   # init singleton before any widget loads
 
+    # Warm the login-shell environment cache before any TerminalPanel is created.
+    # This runs $SHELL -lic env once so every new tab reuses the same snapshot
+    # instead of spawning another subprocess.  Tools in ~/.local/bin, ~/.cargo/bin,
+    # nvm paths, etc. will be found in Blocksh just as they are in a real terminal.
+    from .core.shell_session import _capture_login_env
+    _capture_login_env()
+
     conn = get_connection()
     initialize_schema(conn)
     repository         = HistoryRepository(conn)
